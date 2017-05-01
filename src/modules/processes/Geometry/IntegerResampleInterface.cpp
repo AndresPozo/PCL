@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// IntegerResampleInterface.cpp - Released 2016/02/21 20:22:42 UTC
+// IntegerResampleInterface.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -61,7 +61,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-IntegerResampleInterface* TheIntegerResampleInterface = 0;
+IntegerResampleInterface* TheIntegerResampleInterface = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -76,19 +76,15 @@ IntegerResampleInterface* TheIntegerResampleInterface = 0;
 // ----------------------------------------------------------------------------
 
 IntegerResampleInterface::IntegerResampleInterface() :
-ProcessInterface(),
-instance( TheIntegerResampleProcess ),
-sourceWidth( 1000 ),
-sourceHeight( 1000 ),
-GUI( 0 )
+   instance( TheIntegerResampleProcess )
 {
    TheIntegerResampleInterface = this;
 }
 
 IntegerResampleInterface::~IntegerResampleInterface()
 {
-   if ( GUI != 0 )
-      delete GUI, GUI = 0;
+   if ( GUI != nullptr )
+      delete GUI, GUI = nullptr;
 }
 
 IsoString IntegerResampleInterface::Id() const
@@ -118,15 +114,15 @@ void IntegerResampleInterface::ApplyInstance() const
 
 void IntegerResampleInterface::TrackViewUpdated( bool active )
 {
-   if ( GUI != 0 && active )
-   {
-      ImageWindow w = ImageWindow::ActiveWindow();
-
-      if ( !w.IsNull() )
-         ImageFocused( w.MainView() );
-      else
-         UpdateControls();
-   }
+   if ( GUI != nullptr )
+      if ( active )
+      {
+         ImageWindow w = ImageWindow::ActiveWindow();
+         if ( !w.IsNull() )
+            ImageFocused( w.MainView() );
+         else
+            UpdateControls();
+      }
 }
 
 void IntegerResampleInterface::ResetInstance()
@@ -137,7 +133,7 @@ void IntegerResampleInterface::ResetInstance()
 
 bool IntegerResampleInterface::Launch( const MetaProcess& P, const ProcessImplementation*, bool& dynamic, unsigned& /*flags*/ )
 {
-   if ( GUI == 0 )
+   if ( GUI == nullptr )
    {
       GUI = new GUIData( *this );
       SetWindowTitle( "IntegerResample" );
@@ -156,16 +152,10 @@ ProcessImplementation* IntegerResampleInterface::NewProcess() const
 
 bool IntegerResampleInterface::ValidateProcess( const ProcessImplementation& p, String& whyNot ) const
 {
-   const IntegerResampleInstance* r = dynamic_cast<const IntegerResampleInstance*>( &p );
-
-   if ( r == 0 )
-   {
-      whyNot = "Not an IntegerResample instance.";
-      return false;
-   }
-
-   whyNot.Clear();
-   return true;
+   if ( dynamic_cast<const IntegerResampleInstance*>( &p ) != nullptr )
+      return true;
+   whyNot = "Not an IntegerResample instance.";
+   return false;
 }
 
 bool IntegerResampleInterface::RequiresInstanceValidation() const
@@ -190,35 +180,37 @@ bool IntegerResampleInterface::WantsImageNotifications() const
 
 void IntegerResampleInterface::ImageUpdated( const View& v )
 {
-   if ( GUI != 0 && v == currentView )
-   {
-      v.Window().MainView().GetSize( sourceWidth, sourceHeight );
-      UpdateControls();
-   }
+   if ( GUI != nullptr )
+      if ( v == currentView )
+      {
+         v.Window().MainView().GetSize( sourceWidth, sourceHeight );
+         UpdateControls();
+      }
 }
 
 void IntegerResampleInterface::ImageFocused( const View& v )
 {
-   if ( GUI != 0 && IsTrackViewActive() )
-      if ( !v.IsNull() )
-      {
-         ImageWindow w = v.Window();
-         View mainView = w.MainView();
+   if ( !v.IsNull() )
+      if ( GUI != nullptr )
+         if ( IsTrackViewActive() )
+         {
+            ImageWindow w = v.Window();
+            View mainView = w.MainView();
 
-         mainView.GetSize( sourceWidth, sourceHeight );
+            mainView.GetSize( sourceWidth, sourceHeight );
 
-         GUI->AllImages_ViewList.SelectView( mainView ); // normally not necessary, but we can invoke this f() directly
+            GUI->AllImages_ViewList.SelectView( mainView ); // normally not necessary, but we can invoke this f() directly
 
-         double xRes, yRes;
-         bool metric;
-         w.GetResolution( xRes, yRes, metric );
+            double xRes, yRes;
+            bool metric;
+            w.GetResolution( xRes, yRes, metric );
 
-         instance.p_resolution.x = xRes;
-         instance.p_resolution.y = yRes;
-         instance.p_metric = metric;
+            instance.p_resolution.x = xRes;
+            instance.p_resolution.y = yRes;
+            instance.p_metric = metric;
 
-         UpdateControls();
-      }
+            UpdateControls();
+         }
 }
 
 // ----------------------------------------------------------------------------
@@ -267,20 +259,16 @@ void IntegerResampleInterface::UpdateControls()
    GUI->TargetHeightInches_NumericEdit.SetValue( hin );
 
    String info;
-
    size_type wasArea = size_type( sourceWidth )*size_type( sourceHeight );
    size_type area = size_type( w )*size_type( h );
-
    if ( currentView.IsNull() )
-      info.Format( "32-bit channel size: %.3lf MB, was %.3lf MB", (area*4)/1048576.0, (wasArea*4)/1048576.0 );
+      info.Format( "32-bit channel size: %.3lf MiB, was %.3lf MiB", (area*4)/1048576.0, (wasArea*4)/1048576.0 );
    else
    {
       ImageVariant image = currentView.Window().MainView().Image();
-
       size_type wasBytes = wasArea * image.NumberOfChannels() * image.BytesPerSample();
       size_type bytes = area * image.NumberOfChannels() * image.BytesPerSample();
-
-      info.Format( "%d-bit total size: %.3lf MB, was %.3lf MB", image.BitsPerSample(), bytes/1048576.0, wasBytes/1048576.0 );
+      info.Format( "%d-bit total size: %.3lf MiB, was %.3lf MiB", image.BitsPerSample(), bytes/1048576.0, wasBytes/1048576.0 );
    }
 
    GUI->SizeInfo_Label.SetText( info );
@@ -371,6 +359,23 @@ void IntegerResampleInterface::__ForceResolution_ButtonClick( Button& sender, bo
    instance.p_forceResolution = checked;
 }
 
+void IntegerResampleInterface::__ViewDrag( Control& sender, const Point& pos, const View& view, unsigned modifiers, bool& wantsView )
+{
+   if ( sender == GUI->AllImages_ViewList )
+      wantsView = view.IsMainView();
+}
+
+void IntegerResampleInterface::__ViewDrop( Control& sender, const Point& pos, const View& view, unsigned modifiers )
+{
+   if ( sender == GUI->AllImages_ViewList )
+      if ( view.IsMainView() )
+      {
+         GUI->AllImages_ViewList.SelectView( view );
+         View theView = view;
+         __ViewList_ViewSelected( GUI->AllImages_ViewList, theView );
+      }
+}
+
 // ----------------------------------------------------------------------------
 
 IntegerResampleInterface::GUIData::GUIData( IntegerResampleInterface& w )
@@ -378,7 +383,7 @@ IntegerResampleInterface::GUIData::GUIData( IntegerResampleInterface& w )
    pcl::Font fnt = w.Font();
    int labelWidth1 = fnt.Width( String( "Height:" ) + 'M' );
    int labelWidth2 = fnt.Width( String( "Horizontal:" ) + 'M' );
-   int labelWidth3 = fnt.Width( String( "Resample Factor:" ) + 'M' );
+   int labelWidth3 = fnt.Width( String( "Resample factor:" ) + 'M' );
    int editWidth1 = fnt.Width( String( '0', 12 ) );
    int ui4 = w.LogicalPixelsToPhysical( 4 );
    int ui6 = w.LogicalPixelsToPhysical( 6 );
@@ -386,20 +391,22 @@ IntegerResampleInterface::GUIData::GUIData( IntegerResampleInterface& w )
    // -------------------------------------------------------------------------
 
    AllImages_ViewList.OnViewSelected( (ViewList::view_event_handler)&IntegerResampleInterface::__ViewList_ViewSelected, w );
+   AllImages_ViewList.OnViewDrag( (Control::view_drag_event_handler)&IntegerResampleInterface::__ViewDrag, w );
+   AllImages_ViewList.OnViewDrop( (Control::view_drop_event_handler)&IntegerResampleInterface::__ViewDrop, w );
 
    // -------------------------------------------------------------------------
 
    IntegerResample_SectionBar.SetTitle( "Integer Resample" );
    IntegerResample_SectionBar.SetSection( IntegerResample_Control );
 
-   ResampleFactor_Label.SetText( "Resample Factor:" );
+   ResampleFactor_Label.SetText( "Resample factor:" );
    ResampleFactor_Label.SetMinWidth( labelWidth3 );
    ResampleFactor_Label.SetTextAlignment( TextAlign::Right|TextAlign::VertCenter );
 
-   ResampleFactor_SpinBox.SetRange( 1, int( TheZoomFactorParameter->MaximumValue() ) );
+   ResampleFactor_SpinBox.SetRange( 1, int( TheIRZoomFactorParameter->MaximumValue() ) );
    ResampleFactor_SpinBox.OnValueUpdated( (SpinBox::value_event_handler)&IntegerResampleInterface::__ResampleFactor_ValueUpdated, w );
 
-   DownsampleMode_Label.SetText( "Downsample Mode:" );
+   DownsampleMode_Label.SetText( "Downsample mode:" );
    DownsampleMode_Label.SetTextAlignment( TextAlign::Right|TextAlign::VertCenter );
 
    DownsampleMode_ComboBox.AddItem( "Average" );
@@ -586,8 +593,8 @@ IntegerResampleInterface::GUIData::GUIData( IntegerResampleInterface& w )
    InchUnits_RadioButton.SetText( "Inches" );
    InchUnits_RadioButton.OnClick( (Button::click_event_handler)&IntegerResampleInterface::__Units_ButtonClick, w );
 
-   ForceResolution_CheckBox.SetText( "Force Resolution" );
-   ForceResolution_CheckBox.SetToolTip( "Modify resolution of target image(s)" );
+   ForceResolution_CheckBox.SetText( "Force resolution" );
+   ForceResolution_CheckBox.SetToolTip( "Modify resolution metadata of target image(s)" );
    ForceResolution_CheckBox.OnClick( (Button::click_event_handler)&IntegerResampleInterface::__ForceResolution_ButtonClick, w );
 
    ResolutionRow2_Sizer.SetSpacing( 8 );
@@ -627,4 +634,4 @@ IntegerResampleInterface::GUIData::GUIData( IntegerResampleInterface& w )
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF IntegerResampleInterface.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF IntegerResampleInterface.cpp - Released 2017-04-14T23:07:12Z

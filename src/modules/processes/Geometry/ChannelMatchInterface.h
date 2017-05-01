@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// ChannelMatchInterface.h - Released 2016/02/21 20:22:42 UTC
+// ChannelMatchInterface.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -53,22 +53,19 @@
 #ifndef __ChannelMatchInterface_h
 #define __ChannelMatchInterface_h
 
-#include <pcl/ProcessInterface.h>
-
-#include <pcl/Sizer.h>
-#include <pcl/GroupBox.h>
 #include <pcl/CheckBox.h>
-#include <pcl/ToolButton.h>
-#include <pcl/NumericControl.h>
 #include <pcl/ComboBox.h>
+#include <pcl/GroupBox.h>
+#include <pcl/NumericControl.h>
+#include <pcl/ProcessInterface.h>
+#include <pcl/Sizer.h>
+#include <pcl/ToolButton.h>
 
 #include "ChannelMatchInstance.h"
 
 namespace pcl
 {
 
-// ----------------------------------------------------------------------------
-// ChannelMatchInterface
 // ----------------------------------------------------------------------------
 
 class ChannelMatchInterface : public ProcessInterface
@@ -85,7 +82,7 @@ public:
    virtual void ApplyInstance() const;
    virtual void ResetInstance();
 
-   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& /*flags*/ );
+   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& flags );
 
    virtual ProcessImplementation* NewProcess() const;
 
@@ -93,13 +90,9 @@ public:
    virtual bool RequiresInstanceValidation() const;
    virtual bool ImportProcess( const ProcessImplementation& );
 
-   // -------------------------------------------------------------------------
-
 private:
 
    ChannelMatchInstance instance;
-
-   // -------------------------------------------------------------------------
 
    struct GUIData
    {
@@ -150,7 +143,7 @@ private:
             NumericControl    B_Factor_NumericControl;
    };
 
-   GUIData* GUI;
+   GUIData* GUI = nullptr;
 
    void UpdateControls();
 
@@ -175,4 +168,4 @@ PCL_END_LOCAL
 #endif   // __ChannelMatchInterface_h
 
 // ----------------------------------------------------------------------------
-// EOF ChannelMatchInterface.h - Released 2016/02/21 20:22:42 UTC
+// EOF ChannelMatchInterface.h - Released 2017-04-14T23:07:12Z

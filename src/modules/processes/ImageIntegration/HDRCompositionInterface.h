@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// HDRCompositionInterface.h - Released 2016/02/21 20:22:43 UTC
+// HDRCompositionInterface.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -98,13 +98,9 @@ public:
 
    virtual void SaveSettings() const;
 
-   // -------------------------------------------------------------------------
-
 private:
 
    HDRCompositionInstance instance;
-
-   // -------------------------------------------------------------------------
 
    struct GUIData
    {
@@ -144,6 +140,9 @@ private:
          HorizontalSizer   MaskGrowth_Sizer;
             Label             MaskGrowth_Label;
             SpinBox           MaskGrowth_SpinBox;
+         HorizontalSizer   ReplaceLargeScales_Sizer;
+            Label             ReplaceLargeScales_Label;
+            SpinBox           ReplaceLargeScales_SpinBox;
          HorizontalSizer   AutoExposures_Sizer;
             CheckBox          AutoExposures_CheckBox;
          HorizontalSizer   RejectBlack_Sizer;
@@ -173,9 +172,7 @@ private:
             PushButton        SelectPreview_Button;
    };
 
-   GUIData* GUI;
-
-   // Interface Updates
+   GUIData* GUI = nullptr;
 
    void UpdateControls();
    void UpdateInputImagesItem( size_type );
@@ -185,24 +182,22 @@ private:
    void UpdateHDRCompositionControls();
    void UpdateFittingRegionControls();
 
-   // Event Handlers
-
    void __InputImages_CurrentNodeUpdated( TreeBox& sender, TreeBox::Node& current, TreeBox::Node& oldCurrent );
    void __InputImages_NodeActivated( TreeBox& sender, TreeBox::Node& node, int col );
    void __InputImages_NodeSelectionUpdated( TreeBox& sender );
    void __InputImages_Click( Button& sender, bool checked );
-
    void __FormatHints_EditCompleted( Edit& sender );
-
    void __HDRComposition_EditValueUpdated( NumericEdit& sender, double value );
    void __HDRComposition_SpinValueUpdated( SpinBox& sender, int value );
    void __HDRComposition_Click( Button& sender, bool checked );
-
    void __FittingRegion_Check( SectionBar& sender, bool checked );
    void __FittingRegion_SpinValueUpdated( SpinBox& sender, int value );
    void __FittingRegion_Click( Button& sender, bool checked );
-
    void __ToggleSection( SectionBar& sender, Control& section, bool start );
+   void __FileDrag( Control& sender, const Point& pos, const StringList& files, unsigned modifiers, bool& wantsFiles );
+   void __FileDrop( Control& sender, const Point& pos, const StringList& files, unsigned modifiers );
+   void __ViewDrag( Control& sender, const Point& pos, const View& view, unsigned modifiers, bool& wantsView );
+   void __ViewDrop( Control& sender, const Point& pos, const View& view, unsigned modifiers );
 
    friend struct GUIData;
 };
@@ -220,4 +215,4 @@ PCL_END_LOCAL
 #endif   // __HDRCompositionInterface_h
 
 // ----------------------------------------------------------------------------
-// EOF HDRCompositionInterface.h - Released 2016/02/21 20:22:43 UTC
+// EOF HDRCompositionInterface.h - Released 2017-04-14T23:07:12Z

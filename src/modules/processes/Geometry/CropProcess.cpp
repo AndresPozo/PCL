@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// CropProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// CropProcess.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -60,7 +60,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-CropProcess* TheCropProcess = 0;
+CropProcess* TheCropProcess = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -72,78 +72,61 @@ CropProcess::CropProcess() : MetaProcess()
 {
    TheCropProcess = this;
 
-   // Instantiate process parameters
-
-   new LeftMargin( this );
-   new TopMargin( this );
-   new RightMargin( this );
-   new BottomMargin( this );
-   TheCroppingModeParameter = new CroppingMode( this );
-   TheXResolutionCropParameter = new XResolution( this );
-   TheYResolutionCropParameter = new YResolution( this );
-   TheMetricResolutionCropParameter = new MetricResolution( this );
-   TheForceResolutionCropParameter = new ForceResolution( this );
-   TheFillRedCropParameter = new FillRed( this );
-   TheFillGreenCropParameter = new FillGreen( this );
-   TheFillBlueCropParameter = new FillBlue( this );
-   TheFillAlphaCropParameter = new FillAlpha( this );
+   new CRLeftMargin( this );
+   new CRTopMargin( this );
+   new CRRightMargin( this );
+   new CRBottomMargin( this );
+   TheCRModeParameter = new CRMode( this );
+   TheCRXResolutionParameter = new XResolution( this );
+   TheCRYResolutionParameter = new YResolution( this );
+   TheCRMetricResolutionParameter = new MetricResolution( this );
+   TheCRForceResolutionParameter = new ForceResolution( this );
+   TheCRFillRedParameter = new FillRed( this );
+   TheCRFillGreenParameter = new FillGreen( this );
+   TheCRFillBlueParameter = new FillBlue( this );
+   TheCRFillAlphaParameter = new FillAlpha( this );
+   TheCRNoGUIMessagesParameter = new NoGUIMessages( this );
 }
-
-// ----------------------------------------------------------------------------
 
 IsoString CropProcess::Id() const
 {
    return "Crop";
 }
 
-// ----------------------------------------------------------------------------
-
 IsoString CropProcess::Category() const
 {
    return "Geometry";
 }
-
-// ----------------------------------------------------------------------------
 
 uint32 CropProcess::Version() const
 {
    return 0x100;
 }
 
-// ----------------------------------------------------------------------------
-
 String CropProcess::Description() const
 {
    return "";
 }
-
-// ----------------------------------------------------------------------------
 
 const char** CropProcess::IconImageXPM() const
 {
    return CropIcon_XPM;
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessInterface* CropProcess::DefaultInterface() const
 {
    return TheCropInterface;
 }
-
-// -------------------------------------------------------------------------
 
 ProcessImplementation* CropProcess::Create() const
 {
    return new CropInstance( this );
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessImplementation* CropProcess::Clone( const ProcessImplementation& p ) const
 {
    const CropInstance* instPtr = dynamic_cast<const CropInstance*>( &p );
-   return (instPtr != 0) ? new CropInstance( *instPtr ) : 0;
+   return (instPtr != nullptr) ? new CropInstance( *instPtr ) : nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -151,4 +134,4 @@ ProcessImplementation* CropProcess::Clone( const ProcessImplementation& p ) cons
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF CropProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF CropProcess.cpp - Released 2017-04-14T23:07:12Z

@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// ResampleParameters.h - Released 2016/02/21 20:22:42 UTC
+// ResampleParameters.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -62,39 +62,37 @@ PCL_BEGIN_LOCAL
 
 // ----------------------------------------------------------------------------
 
-class XSize : public MetaDouble
+class RSXSize : public MetaDouble
 {
 public:
 
-   XSize( MetaProcess* );
+   RSXSize( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
-
    virtual double DefaultValue() const;
 };
 
-extern XSize* TheXSizeParameter;
+extern RSXSize* TheRSXSizeParameter;
 
 // ----------------------------------------------------------------------------
 
-class YSize : public MetaDouble
+class RSYSize : public MetaDouble
 {
 public:
 
-   YSize( MetaProcess* );
+   RSYSize( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
-
    virtual double DefaultValue() const;
 };
 
-extern YSize* TheYSizeParameter;
+extern RSYSize* TheRSYSizeParameter;
 
 // ----------------------------------------------------------------------------
 
-class ResampleMode : public MetaEnumeration
+class RSMode : public MetaEnumeration
 {
 public:
 
@@ -103,10 +101,10 @@ public:
           AbsoluteCentimeters,   // to absolute dimensions in centimeters
           AbsoluteInches,        // to absolute dimensions in inches
           ForceArea,             // force number of pixels, keep aspect ratio
-          NumberOfResampleModes,
+          NumberOfModes,
           Default = RelativeDimensions };
 
-   ResampleMode( MetaProcess* );
+   RSMode( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual size_type NumberOfElements() const;
@@ -115,21 +113,21 @@ public:
    virtual size_type DefaultValueIndex() const;
 };
 
-extern ResampleMode* TheResampleModeParameter;
+extern RSMode* TheRSModeParameter;
 
 // ----------------------------------------------------------------------------
 
-class AbsoluteResampleMode : public MetaEnumeration
+class RSAbsoluteMode : public MetaEnumeration
 {
 public:
 
    enum { ForceWidthAndHeight,   // force both dimensions
           ForceWidth,            // force width, preserve aspect ratio
           ForceHeight,           // force height, preserve aspect ratio
-          NumberOfAbsoluteResampleModes,
+          NumberOfModes,
           Default = ForceWidthAndHeight };
 
-   AbsoluteResampleMode( MetaProcess* );
+   RSAbsoluteMode( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual size_type NumberOfElements() const;
@@ -138,18 +136,20 @@ public:
    virtual size_type DefaultValueIndex() const;
 };
 
-extern AbsoluteResampleMode* TheAbsoluteResampleModeParameter;
+extern RSAbsoluteMode* TheRSAbsoluteModeParameter;
 
 // ----------------------------------------------------------------------------
 
-extern XResolution* TheXResolutionResampleParameter;
-extern YResolution* TheYResolutionResampleParameter;
-extern MetricResolution* TheMetricResolutionResampleParameter;
-extern ForceResolution* TheForceResolutionResampleParameter;
+extern XResolution* TheRSXResolutionParameter;
+extern YResolution* TheRSYResolutionParameter;
+extern MetricResolution* TheRSMetricResolutionParameter;
+extern ForceResolution* TheRSForceResolutionParameter;
 
-extern InterpolationAlgorithm* TheInterpolationAlgorithmResampleParameter;
-extern ClampingThreshold* TheClampingThresholdResampleParameter;
-extern Smoothness* TheSmoothnessResampleParameter;
+extern InterpolationAlgorithm* TheRSInterpolationAlgorithmParameter;
+extern ClampingThreshold* TheRSClampingThresholdParameter;
+extern Smoothness* TheRSSmoothnessParameter;
+
+extern NoGUIMessages* TheRSNoGUIMessagesParameter;
 
 // ----------------------------------------------------------------------------
 
@@ -160,4 +160,4 @@ PCL_END_LOCAL
 #endif   // __ResampleParameters_h
 
 // ----------------------------------------------------------------------------
-// EOF ResampleParameters.h - Released 2016/02/21 20:22:42 UTC
+// EOF ResampleParameters.h - Released 2017-04-14T23:07:12Z

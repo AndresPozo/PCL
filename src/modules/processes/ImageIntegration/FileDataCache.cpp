@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// FileDataCache.cpp - Released 2016/02/21 20:22:43 UTC
+// FileDataCache.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -52,9 +52,11 @@
 
 #include "FileDataCache.h"
 
+#include <pcl/AutoLock.h>
+#include <pcl/AutoPointer.h>
 #include <pcl/FileInfo.h>
-#include <pcl/Settings.h>
 #include <pcl/Math.h>
+#include <pcl/Settings.h>
 
 #include <time.h>
 
@@ -63,48 +65,82 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
+bool FileDataCache::IsEmpty() const
+{
+   volatile AutoLock lock( m_mutex );
+   return m_cache.IsEmpty();
+}
+
+const FileDataCacheItem* FileDataCache::Find( const String& path ) const
+{
+   volatile AutoLock lock( m_mutex );
+   cache_index::const_iterator i = m_cache.Search( FileDataCacheItem( path ) );
+   return (i == m_cache.End()) ? nullptr : i;
+}
+
+void FileDataCache::Clear()
+{
+   volatile AutoLock lock( m_mutex );
+   m_cache.Destroy();
+}
+
 void FileDataCache::Add( const FileDataCacheItem& item )
 {
    FileInfo info( item.path );
    if ( !info.Exists() || !info.IsFile() )
       throw Error( "FileDataCache::Add(): No such file: " + item.path );
 
-   cache_index::const_iterator i = m_cache.Search( item );
-   if ( i == m_cache.End() )
    {
-      FileDataCacheItem* newItem = NewItem();
-      newItem->path = item.path;
-      m_cache.Add( newItem );
-      i = m_cache.Search( newItem );
-   }
+      volatile AutoLock lock( m_mutex );
 
-#define newItem (*const_cast<cache_index::iterator>( i ))
-   time_t t0 = ::time( 0 );
-   const tm* t = ::gmtime( &t0 );
-   newItem->lastUsed = unsigned( ComplexTimeToJD( t->tm_year+1900, t->tm_mon+1, t->tm_mday ) );
-   newItem->time = info.LastModified();
-   newItem->AssignData( item );
-#undef newItem
+      cache_index::const_iterator i = m_cache.Search( item );
+      if ( i == m_cache.End() )
+      {
+         FileDataCacheItem* newItem = NewItem();
+         newItem->path = item.path;
+         m_cache << newItem;
+         i = m_cache.Search( newItem );
+      }
+
+      FileDataCacheItem& newItem = *m_cache.MutableIterator( i );
+      time_t t0 = ::time( 0 );
+      const tm* t = ::gmtime( &t0 );
+      newItem.lastUsed = unsigned( ComplexTimeToJD( t->tm_year+1900, t->tm_mon+1, t->tm_mday ) );
+      newItem.time = info.LastModified();
+      newItem.AssignData( item );
+   }
 }
 
 bool FileDataCache::Get( FileDataCacheItem& item, const String& path )
 {
-   cache_index::const_iterator i = m_cache.Search( FileDataCacheItem( path ) );
-   if ( i == m_cache.End() )
-      return false;
-
    FileInfo info( path );
-   if ( !info.Exists() || !info.IsFile() )
+   bool badItem = !info.Exists() || !info.IsFile();
+
+   {
+      volatile AutoLock lock( m_mutex );
+
+      cache_index::const_iterator i = m_cache.Search( FileDataCacheItem( path ) );
+      if ( i != m_cache.End() )
+      {
+         if ( !badItem )
+         {
+            item.Assign( *i );
+            item.AssignData( *i );
+            if ( !item.ModifiedSince( info.LastModified() ) )
+               return true;
+         }
+
+         m_cache.Destroy( m_cache.MutableIterator( i ) );
+      }
+   }
+
+   if ( badItem )
       throw Error( "FileDataCache::Get(): No such file: " + path );
 
-   item.Assign( **i );
-   item.AssignData( **i );
-   if ( !item.ModifiedSince( info.LastModified() ) )
-      return true;
-
-   m_cache.Destroy( m_cache.MutableIterator( i ) );
    return false;
 }
+
+// ----------------------------------------------------------------------------
 
 void FileDataCache::Load()
 {
@@ -119,32 +155,24 @@ void FileDataCache::Load()
 
    if ( IsEnabled() )
    {
-      FileDataCacheItem* item = 0;
-
       try
       {
+         AutoPointer<FileDataCacheItem> item;
+
          for ( int i = 0; ; ++i )
          {
             item = NewItem();
-
             if ( !item->Load( m_keyPrefix, i ) )
-            {
-               delete item, item = 0;
                break;
-            }
 
             if ( m_durationDays > 0 && item->DaysSinceLastUsed() > unsigned( m_durationDays ) )
-               delete item;
+               item.Destroy();
             else
-               m_cache.Add( item );
-
-            item = 0;
+               m_cache << item.Release();
          }
       }
       catch ( ... )
       {
-         if ( item != 0 )
-            delete item;
          m_cache.Destroy();
          throw Error( "FileDataCache::Load(): Corrupted cache data" );
       }
@@ -157,11 +185,11 @@ void FileDataCache::Save() const
    {
       Purge();
       int index = 0;
-      for ( cache_index::const_iterator i = m_cache.Begin(); i != m_cache.End(); ++i )
-         (*i)->Save( m_keyPrefix, index++ );
+      for ( const FileDataCacheItem& item : m_cache )
+         item.Save( m_keyPrefix, index++ );
    }
 
-   // Make sure this is done after Purge()
+   // Make sure this is done _after_ Purge()
    Settings::Write( m_keyPrefix + "Duration", Duration() );
    Settings::Write( m_keyPrefix + "Enabled", IsEnabled() );
 }
@@ -208,19 +236,16 @@ bool FileDataCacheItem::GetVector( DVector& v, StringList::const_iterator& i, co
 String FileDataCacheItem::AsString() const
 {
    String s( "path\n" + path );
-
    s.AppendFormat( "\nlastUsed\n%u\ntime\n%u\n%u",
                    lastUsed,
                    unsigned( ComplexTimeToJD( time.year, time.month, time.day ) ),
                    ((time.hour*60 + time.minute)*60 + time.second)*1000 + time.milliseconds );
-
    String data = DataAsString();
    if ( !data.IsEmpty() )
    {
       s.Append( "\ndata\n" );
       s.Append( data );
    }
-
    return s;
 }
 
@@ -300,4 +325,4 @@ void FileDataCacheItem::Save( const IsoString& keyPrefix, int index ) const
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF FileDataCache.cpp - Released 2016/02/21 20:22:43 UTC
+// EOF FileDataCache.cpp - Released 2017-04-14T23:07:12Z

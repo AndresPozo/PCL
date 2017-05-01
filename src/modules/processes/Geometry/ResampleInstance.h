@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// ResampleInstance.h - Released 2016/02/21 20:22:42 UTC
+// ResampleInstance.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -64,8 +64,6 @@ namespace pcl
 class PixelInterpolation;
 
 // ----------------------------------------------------------------------------
-// ResampleInstance
-// ----------------------------------------------------------------------------
 
 class ResampleInstance : public ProcessImplementation
 {
@@ -76,16 +74,15 @@ public:
 
    virtual void Assign( const ProcessImplementation& );
 
-   virtual bool IsMaskable( const View&, const ImageWindow& ) const
-   {
-      return false;
-   }
+   virtual bool IsMaskable( const View&, const ImageWindow& ) const;
+
+   virtual UndoFlags UndoMode( const View& ) const;
 
    virtual bool CanExecuteOn( const View&, pcl::String& whyNot ) const;
    virtual bool BeforeExecution( View& );
    virtual bool ExecuteOn( View& );
 
-   virtual void* LockParameter( const MetaParameter*, size_type /*tableRow*/ );
+   virtual void* LockParameter( const MetaParameter*, size_type tableRow );
 
    void GetNewSizes( int& w, int& h ) const;
 
@@ -100,6 +97,7 @@ private:
    pcl_enum p_interpolation;     // interpolation algorithm
    float    p_clampingThreshold; // deringing clamping for bicubic spline and Lanczos
    float    p_smoothness;        // smoothness for cubic filter interpolations
+   pcl_bool p_noGUIMessages;    // only show warning messages on the console
 
    friend class ResampleEngine;
    friend class ResampleInterface;
@@ -112,4 +110,4 @@ private:
 #endif   // __ResampleInstance_h
 
 // ----------------------------------------------------------------------------
-// EOF ResampleInstance.h - Released 2016/02/21 20:22:42 UTC
+// EOF ResampleInstance.h - Released 2017-04-14T23:07:12Z

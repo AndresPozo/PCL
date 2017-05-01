@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// ResampleParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// ResampleParameters.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -55,80 +55,83 @@
 namespace pcl
 {
 
-XSize*                  TheXSizeParameter = 0;
-YSize*                  TheYSizeParameter = 0;
-ResampleMode*           TheResampleModeParameter = 0;
-AbsoluteResampleMode*   TheAbsoluteResampleModeParameter = 0;
-XResolution*            TheXResolutionResampleParameter = 0;
-YResolution*            TheYResolutionResampleParameter = 0;
-MetricResolution*       TheMetricResolutionResampleParameter = 0;
-ForceResolution*        TheForceResolutionResampleParameter = 0;
-InterpolationAlgorithm* TheInterpolationAlgorithmResampleParameter = 0;
-ClampingThreshold*      TheClampingThresholdResampleParameter = 0;
-Smoothness*             TheSmoothnessResampleParameter = 0;
+// ----------------------------------------------------------------------------
+
+RSXSize*                TheRSXSizeParameter = nullptr;
+RSYSize*                TheRSYSizeParameter = nullptr;
+RSMode*                 TheRSModeParameter = nullptr;
+RSAbsoluteMode*         TheRSAbsoluteModeParameter = nullptr;
+XResolution*            TheRSXResolutionParameter = nullptr;
+YResolution*            TheRSYResolutionParameter = nullptr;
+MetricResolution*       TheRSMetricResolutionParameter = nullptr;
+ForceResolution*        TheRSForceResolutionParameter = nullptr;
+InterpolationAlgorithm* TheRSInterpolationAlgorithmParameter = nullptr;
+ClampingThreshold*      TheRSClampingThresholdParameter = nullptr;
+Smoothness*             TheRSSmoothnessParameter = nullptr;
+NoGUIMessages*          TheRSNoGUIMessagesParameter = nullptr;
 
 // ----------------------------------------------------------------------------
 
-XSize::XSize( MetaProcess* P ) : MetaDouble( P )
+RSXSize::RSXSize( MetaProcess* P ) : MetaDouble( P )
 {
-   TheXSizeParameter = this;
+   TheRSXSizeParameter = this;
 }
 
-IsoString XSize::Id() const
+IsoString RSXSize::Id() const
 {
    return "xSize";
 }
 
-int XSize::Precision() const
+int RSXSize::Precision() const
 {
    return 4;
 }
 
-double XSize::DefaultValue() const
+double RSXSize::DefaultValue() const
 {
    return 1;
 }
 
 // ----------------------------------------------------------------------------
 
-YSize::YSize( MetaProcess* P ) : MetaDouble( P )
+RSYSize::RSYSize( MetaProcess* P ) : MetaDouble( P )
 {
-   TheYSizeParameter = this;
+   TheRSYSizeParameter = this;
 }
 
-IsoString YSize::Id() const
+IsoString RSYSize::Id() const
 {
    return "ySize";
 }
 
-int YSize::Precision() const
+int RSYSize::Precision() const
 {
    return 4;
 }
 
-double YSize::DefaultValue() const
+double RSYSize::DefaultValue() const
 {
    return 1;
 }
 
 // ----------------------------------------------------------------------------
 
-ResampleMode::ResampleMode( MetaProcess* P ) : MetaEnumeration( P )
+RSMode::RSMode( MetaProcess* P ) : MetaEnumeration( P )
 {
-   TheResampleModeParameter = this;
+   TheRSModeParameter = this;
 }
 
-IsoString ResampleMode::Id() const
+IsoString RSMode::Id() const
 {
    return "mode";
 }
 
-size_type ResampleMode::NumberOfElements() const
+size_type RSMode::NumberOfElements() const
 {
-   return NumberOfResampleModes;
+   return NumberOfModes;
 }
 
-IsoString ResampleMode::ElementId( size_type i ) const
+IsoString RSMode::ElementId( size_type i ) const
 {
    switch ( i )
    {
@@ -141,34 +144,34 @@ IsoString ResampleMode::ElementId( size_type i ) const
    }
 }
 
-int ResampleMode::ElementValue( size_type i ) const
+int RSMode::ElementValue( size_type i ) const
 {
    return int( i );
 }
 
-size_type ResampleMode::DefaultValueIndex() const
+size_type RSMode::DefaultValueIndex() const
 {
    return Default;
 }
 
 // ----------------------------------------------------------------------------
 
-AbsoluteResampleMode::AbsoluteResampleMode( MetaProcess* P ) : MetaEnumeration( P )
+RSAbsoluteMode::RSAbsoluteMode( MetaProcess* P ) : MetaEnumeration( P )
 {
-   TheAbsoluteResampleModeParameter = this;
+   TheRSAbsoluteModeParameter = this;
 }
 
-IsoString AbsoluteResampleMode::Id() const
+IsoString RSAbsoluteMode::Id() const
 {
    return "absoluteMode";
 }
 
-size_type AbsoluteResampleMode::NumberOfElements() const
+size_type RSAbsoluteMode::NumberOfElements() const
 {
-   return NumberOfAbsoluteResampleModes;
+   return NumberOfModes;
 }
 
-IsoString AbsoluteResampleMode::ElementId( size_type i ) const
+IsoString RSAbsoluteMode::ElementId( size_type i ) const
 {
    switch ( i )
    {
@@ -179,12 +182,12 @@ IsoString AbsoluteResampleMode::ElementId( size_type i ) const
    }
 }
 
-int AbsoluteResampleMode::ElementValue( size_type i ) const
+int RSAbsoluteMode::ElementValue( size_type i ) const
 {
    return int( i );
 }
 
-size_type AbsoluteResampleMode::DefaultValueIndex() const
+size_type RSAbsoluteMode::DefaultValueIndex() const
 {
    return Default;
 }
@@ -194,4 +197,4 @@ size_type AbsoluteResampleMode::DefaultValueIndex() const
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF ResampleParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF ResampleParameters.cpp - Released 2017-04-14T23:07:12Z

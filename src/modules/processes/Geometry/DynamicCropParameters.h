@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// DynamicCropParameters.h - Released 2016/02/21 20:22:42 UTC
+// DynamicCropParameters.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -62,110 +62,117 @@ PCL_BEGIN_LOCAL
 
 // ----------------------------------------------------------------------------
 
-class CropCenterX : public MetaDouble
+class DCCenterX : public MetaDouble
 {
 public:
 
-   CropCenterX( MetaProcess* );
+   DCCenterX( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern CropCenterX* TheCropCenterXParameter;
+extern DCCenterX* TheDCCenterXParameter;
 
 // ----------------------------------------------------------------------------
 
-class CropCenterY : public MetaDouble
+class DCCenterY : public MetaDouble
 {
 public:
 
-   CropCenterY( MetaProcess* );
+   DCCenterY( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern CropCenterY* TheCropCenterYParameter;
+extern DCCenterY* TheDCCenterYParameter;
 
 // ----------------------------------------------------------------------------
 
-class CropWidth : public MetaDouble
+class DCWidth : public MetaDouble
 {
 public:
 
-   CropWidth( MetaProcess* );
+   DCWidth( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern CropWidth* TheCropWidthParameter;
+extern DCWidth* TheDCWidthParameter;
 
 // ----------------------------------------------------------------------------
 
-class CropHeight : public MetaDouble
+class DCHeight : public MetaDouble
 {
 public:
 
-   CropHeight( MetaProcess* );
+   DCHeight( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern CropHeight* TheCropHeightParameter;
+extern DCHeight* TheDCHeightParameter;
 
 // ----------------------------------------------------------------------------
 
-extern RotationAngle* TheRotationAngleDynamicCropParameter;
+extern RotationAngle* TheDCRotationAngleParameter;
 
 // ----------------------------------------------------------------------------
 
-class ScaleX : public MetaDouble
+class DCScaleX : public MetaDouble
 {
 public:
 
-   ScaleX( MetaProcess* );
+   DCScaleX( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern ScaleX* TheScaleXParameter;
+extern DCScaleX* TheDCScaleXParameter;
 
 // ----------------------------------------------------------------------------
 
-class ScaleY : public MetaDouble
+class DCScaleY : public MetaDouble
 {
 public:
 
-   ScaleY( MetaProcess* );
+   DCScaleY( MetaProcess* );
 
    virtual IsoString Id() const;
    virtual int Precision() const;
    virtual double DefaultValue() const;
 };
 
-extern ScaleY* TheScaleYParameter;
+extern DCScaleY* TheDCScaleYParameter;
 
 // ----------------------------------------------------------------------------
 
-extern OptimizeFastRotations* TheOptimizeFastRotationsDynamicCropParameter;
+extern OptimizeFastRotations* TheDCOptimizeFastRotationsParameter;
 
-extern InterpolationAlgorithm* TheInterpolationAlgorithmDynamicCropParameter;
-extern ClampingThreshold* TheClampingThresholdDynamicCropParameter;
-extern Smoothness* TheSmoothnessDynamicCropParameter;
+extern InterpolationAlgorithm* TheDCInterpolationAlgorithmParameter;
+extern ClampingThreshold* TheDCClampingThresholdParameter;
+extern Smoothness* TheDCSmoothnessParameter;
 
-extern FillRed* TheFillRedDynamicCropParameter;
-extern FillGreen* TheFillGreenDynamicCropParameter;
-extern FillBlue* TheFillBlueDynamicCropParameter;
-extern FillAlpha* TheFillAlphaDynamicCropParameter;
+extern XResolution* TheDCXResolutionParameter;
+extern YResolution* TheDCYResolutionParameter;
+extern MetricResolution* TheDCMetricResolutionParameter;
+extern ForceResolution* TheDCForceResolutionParameter;
+
+extern FillRed* TheDCFillRedParameter;
+extern FillGreen* TheDCFillGreenParameter;
+extern FillBlue* TheDCFillBlueParameter;
+extern FillAlpha* TheDCFillAlphaParameter;
+
+extern NoGUIMessages* TheDCNoGUIMessagesParameter;
 
 // ----------------------------------------------------------------------------
 
@@ -176,4 +183,4 @@ PCL_END_LOCAL
 #endif   // __DynamicCropParameters_h
 
 // ----------------------------------------------------------------------------
-// EOF DynamicCropParameters.h - Released 2016/02/21 20:22:42 UTC
+// EOF DynamicCropParameters.h - Released 2017-04-14T23:07:12Z

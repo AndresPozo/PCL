@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// DrizzleIntegrationInterface.cpp - Released 2016/02/21 20:22:43 UTC
+// DrizzleIntegrationInterface.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -54,6 +54,7 @@
 #include "DrizzleIntegrationProcess.h"
 
 #include <pcl/FileDialog.h>
+#include <pcl/FileFormat.h>
 #include <pcl/MessageBox.h>
 #include <pcl/PreviewSelectionDialog.h>
 
@@ -64,7 +65,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-DrizzleIntegrationInterface* TheDrizzleIntegrationInterface = 0;
+DrizzleIntegrationInterface* TheDrizzleIntegrationInterface = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -73,20 +74,22 @@ DrizzleIntegrationInterface* TheDrizzleIntegrationInterface = 0;
 // ----------------------------------------------------------------------------
 
 DrizzleIntegrationInterface::DrizzleIntegrationInterface() :
-ProcessInterface(), m_instance( TheDrizzleIntegrationProcess ), GUI( 0 )
+   m_instance( TheDrizzleIntegrationProcess )
 {
    TheDrizzleIntegrationInterface = this;
 
-   // The auto save geometry feature is of no good to interfaces that include
-   // both auto-expanding controls (e.g. TreeBox) and collapsible sections
-   // (e.g. SectionBar).
+   /*
+    * The auto save geometry feature is of no good to interfaces that include
+    * both auto-expanding controls (e.g. TreeBox) and collapsible sections
+    * (e.g. SectionBar).
+    */
    DisableAutoSaveGeometry();
 }
 
 DrizzleIntegrationInterface::~DrizzleIntegrationInterface()
 {
-   if ( GUI != 0 )
-      delete GUI, GUI = 0;
+   if ( GUI != nullptr )
+      delete GUI, GUI = nullptr;
 }
 
 IsoString DrizzleIntegrationInterface::Id() const
@@ -117,8 +120,7 @@ void DrizzleIntegrationInterface::ResetInstance()
 
 bool DrizzleIntegrationInterface::Launch( const MetaProcess& P, const ProcessImplementation*, bool& dynamic, unsigned& /*flags*/ )
 {
-   // ### Deferred initialization
-   if ( GUI == 0 )
+   if ( GUI == nullptr )
    {
       GUI = new GUIData( *this );
       SetWindowTitle( "DrizzleIntegration" );
@@ -141,15 +143,10 @@ ProcessImplementation* DrizzleIntegrationInterface::NewProcess() const
 
 bool DrizzleIntegrationInterface::ValidateProcess( const ProcessImplementation& p, pcl::String& whyNot ) const
 {
-   const DrizzleIntegrationInstance* r = dynamic_cast<const DrizzleIntegrationInstance*>( &p );
-   if ( r == 0 )
-   {
-      whyNot = "Not an DrizzleIntegration m_instance.";
-      return false;
-   }
-
-   whyNot.Clear();
-   return true;
+   if ( dynamic_cast<const DrizzleIntegrationInstance*>( &p ) != nullptr )
+      return true;
+   whyNot = "Not an DrizzleIntegration m_instance.";
+   return false;
 }
 
 bool DrizzleIntegrationInterface::RequiresInstanceValidation() const
@@ -184,7 +181,7 @@ void DrizzleIntegrationInterface::UpdateControls()
 void DrizzleIntegrationInterface::UpdateInputDataItem( size_type i )
 {
    TreeBox::Node* node = GUI->InputData_TreeBox[i];
-   if ( node == 0 )
+   if ( node == nullptr )
       return;
 
    const DrizzleIntegrationInstance::DataItem& item = m_instance.p_inputData[i];
@@ -253,10 +250,16 @@ void DrizzleIntegrationInterface::UpdateIntegrationControls()
 {
    GUI->Scale_SpinBox.SetValue( RoundInt( m_instance.p_scale ) );
    GUI->DropShrink_NumericControl.SetValue( m_instance.p_dropShrink );
+   GUI->KernelFunction_ComboBox.SetCurrentItem( m_instance.p_kernelFunction );
+   GUI->GridSize_SpinBox.SetValue( m_instance.p_kernelGridSize );
    GUI->EnableRejection_CheckBox.SetChecked( m_instance.p_enableRejection );
    GUI->EnableImageWeighting_CheckBox.SetChecked( m_instance.p_enableImageWeighting );
    GUI->EnableSurfaceSplines_CheckBox.SetChecked( m_instance.p_enableSurfaceSplines );
    GUI->ClosePreviousImages_CheckBox.SetChecked( m_instance.p_closePreviousImages );
+
+   bool integrated = DZKernelFunction::IsIntegratedKernel( m_instance.p_kernelFunction );
+   GUI->GridSize_Label.Enable( integrated );
+   GUI->GridSize_SpinBox.Enable( integrated );
 }
 
 void DrizzleIntegrationInterface::UpdateROIControls()
@@ -320,7 +323,7 @@ void DrizzleIntegrationInterface::__NodeSelectionUpdated( TreeBox& sender )
 static size_type TreeInsertionIndex( const TreeBox& tree )
 {
    const TreeBox::Node* n = tree.CurrentNode();
-   return (n != 0) ? tree.ChildIndex( n ) + 1 : tree.NumberOfChildren();
+   return (n != nullptr) ? tree.ChildIndex( n ) + 1 : tree.NumberOfChildren();
 }
 
 void DrizzleIntegrationInterface::__Click( Button& sender, bool checked )
@@ -329,6 +332,7 @@ void DrizzleIntegrationInterface::__Click( Button& sender, bool checked )
    {
       FileFilter drzFiles;
       drzFiles.SetDescription( "Drizzle Data Files" );
+      drzFiles.AddExtension( ".xdrz" );
       drzFiles.AddExtension( ".drz" );
 
       OpenFileDialog d;
@@ -425,6 +429,13 @@ void DrizzleIntegrationInterface::__Click( Button& sender, bool checked )
    }
 }
 
+void DrizzleIntegrationInterface::__ItemSelected( ComboBox& sender, int itemIndex )
+{
+   if ( sender == GUI->KernelFunction_ComboBox )
+      m_instance.p_kernelFunction = itemIndex;
+   UpdateIntegrationControls();
+}
+
 void DrizzleIntegrationInterface::__EditCompleted( Edit& sender )
 {
    String text = sender.Text().Trimmed();
@@ -439,6 +450,8 @@ void DrizzleIntegrationInterface::__SpinValueUpdated( SpinBox& sender, int value
 {
    if ( sender == GUI->Scale_SpinBox )
       m_instance.p_scale = value;
+   else if ( sender == GUI->GridSize_SpinBox )
+      m_instance.p_kernelGridSize = value;
    else if ( sender == GUI->ROIX0_SpinBox )
       m_instance.p_roi.x0 = value;
    else if ( sender == GUI->ROIY0_SpinBox )
@@ -471,12 +484,69 @@ void DrizzleIntegrationInterface::__CheckSection( SectionBar& sender, bool check
       m_instance.p_useROI = checked;
 }
 
+void DrizzleIntegrationInterface::__FileDrag( Control& sender, const Point& pos, const StringList& files, unsigned modifiers, bool& wantsFiles )
+{
+   if ( sender == GUI->InputData_TreeBox.Viewport() )
+      wantsFiles = true;
+   else if ( sender == GUI->InputDirectory_Edit )
+      wantsFiles = files.Length() == 1 && File::DirectoryExists( files[0] );
+}
+
+void DrizzleIntegrationInterface::__FileDrop( Control& sender, const Point& pos, const StringList& files, unsigned modifiers )
+{
+   if ( sender == GUI->InputData_TreeBox.Viewport() )
+   {
+      StringList inputFiles;
+      bool recursive = IsControlOrCmdPressed();
+      for ( const String& item : files )
+         if ( File::Exists( item ) )
+         {
+            String ext = File::ExtractSuffix( item ).CaseFolded();
+            if ( ext == ".xdrz" || ext == ".drz" )
+               inputFiles << item;
+         }
+         else if ( File::DirectoryExists( item ) )
+            inputFiles << FileFormat::DrizzleFiles( item, recursive );
+
+      inputFiles.Sort();
+      size_type i0 = TreeInsertionIndex( GUI->InputData_TreeBox );
+      for ( const String& file : inputFiles )
+         m_instance.p_inputData.Insert( m_instance.p_inputData.At( i0++ ), DrizzleIntegrationInstance::DataItem( file ) );
+
+      UpdateInputDataList();
+      UpdateDataSelectionButtons();
+   }
+   else if ( sender == GUI->InputDirectory_Edit )
+   {
+      if ( File::DirectoryExists( files[0] ) )
+         GUI->InputDirectory_Edit.SetText( m_instance.p_inputDirectory = files[0] );
+   }
+}
+
+void DrizzleIntegrationInterface::__ViewDrag( Control& sender, const Point& pos, const View& view, unsigned modifiers, bool& wantsView )
+{
+   if ( sender == GUI->ROI_SectionBar || sender == GUI->ROI_Control || sender == GUI->SelectPreview_Button )
+      wantsView = view.IsPreview();
+}
+
+void DrizzleIntegrationInterface::__ViewDrop( Control& sender, const Point& pos, const View& view, unsigned modifiers )
+{
+   if ( sender == GUI->ROI_SectionBar || sender == GUI->ROI_Control || sender == GUI->SelectPreview_Button )
+      if ( view.IsPreview() )
+      {
+         m_instance.p_useROI = true;
+         m_instance.p_roi = view.Window().PreviewRect( view.Id() );
+         GUI->ROI_SectionBar.ShowSection();
+         UpdateROIControls();
+      }
+}
+
 // ----------------------------------------------------------------------------
 
 DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
 {
    pcl::Font fnt = w.Font();
-   int labelWidth1 = fnt.Width( String( "Input directory:" ) + 'T' );
+   int labelWidth1 = fnt.Width( String( "Kernel function:" ) + 'M' );
    int editWidth1 = fnt.Width( String( '0', 8 ) );
    //int spinWidth1 = fnt.Width( String( '0', 11 ) );
    int ui4 = w.LogicalPixelsToPhysical( 4 );
@@ -496,6 +566,8 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
    InputData_TreeBox.OnCurrentNodeUpdated( (TreeBox::node_navigation_event_handler)&DrizzleIntegrationInterface::__CurrentNodeUpdated, w );
    InputData_TreeBox.OnNodeActivated( (TreeBox::node_event_handler)&DrizzleIntegrationInterface::__NodeActivated, w );
    InputData_TreeBox.OnNodeSelectionUpdated( (TreeBox::tree_event_handler)&DrizzleIntegrationInterface::__NodeSelectionUpdated, w );
+   InputData_TreeBox.Viewport().OnFileDrag( (Control::file_drag_event_handler)&DrizzleIntegrationInterface::__FileDrag, w );
+   InputData_TreeBox.Viewport().OnFileDrop( (Control::file_drop_event_handler)&DrizzleIntegrationInterface::__FileDrop, w );
 
    AddFiles_PushButton.SetText( "Add Files" );
    AddFiles_PushButton.SetToolTip( "<p>Add existing drizzle data files to the list of input data files.</p>"
@@ -589,6 +661,8 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
 
    InputDirectory_Edit.SetToolTip( outputDirectoryToolTip );
    InputDirectory_Edit.OnEditCompleted( (Edit::edit_event_handler)&DrizzleIntegrationInterface::__EditCompleted, w );
+   InputDirectory_Edit.OnFileDrag( (Control::file_drag_event_handler)&DrizzleIntegrationInterface::__FileDrag, w );
+   InputDirectory_Edit.OnFileDrop( (Control::file_drop_event_handler)&DrizzleIntegrationInterface::__FileDrop, w );
 
    InputDirectory_ToolButton.SetIcon( Bitmap( w.ScaledResource( ":/icons/select-file.png" ) ) );
    InputDirectory_ToolButton.SetScaledFixedSize( 20, 20 );
@@ -648,6 +722,58 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
       "more and better dithered input images. The default drop shrink factor is 0.9.</p>" );
    DropShrink_NumericControl.OnValueUpdated( (NumericEdit::value_event_handler)&DrizzleIntegrationInterface::__ValueUpdated, w );
 
+   const char* kernelFunctionToolTip = "<p>Drizzle drop kernel function. This parameter defines the shape of an input "
+      "drop as a two-dimensional surface function. Square and circular kernels are applied by computing the area of the "
+      "intersection between each drop and the projected output pixel. Gaussian and VariableShape kernels are applied by "
+      "computing the double integral of the surface function over the intersection between the drop and the projected output "
+      "pixel on the XY plane. Square kernels are used by default.</p>"
+      "<p>Gaussian and VariableShape drizzle kernels (the latter providing finer control on function profiles) can be used "
+      "to improve resolution of the integrated image. However, these functions tend to require much more and much better "
+      "dithered data than the standard square and circular kernels to achieve optimal results.</p>";
+
+   KernelFunction_Label.SetText( "Kernel function:" );
+   KernelFunction_Label.SetFixedWidth( labelWidth1 );
+   KernelFunction_Label.SetTextAlignment( TextAlign::Right|TextAlign::VertCenter );
+   KernelFunction_Label.SetToolTip( kernelFunctionToolTip );
+
+   KernelFunction_ComboBox.AddItem( "Square" );
+   KernelFunction_ComboBox.AddItem( "Circular" );
+   KernelFunction_ComboBox.AddItem( "Gaussian" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 1" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 1.5" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 3" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 4" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 5" );
+   KernelFunction_ComboBox.AddItem( "VariableShape, k = 6" );
+
+   KernelFunction_ComboBox.SetToolTip( kernelFunctionToolTip );
+   KernelFunction_ComboBox.OnItemSelected( (ComboBox::item_event_handler)&DrizzleIntegrationInterface::__ItemSelected, w );
+
+   KernelFunction_Sizer.SetSpacing( 4 );
+   KernelFunction_Sizer.Add( KernelFunction_Label );
+   KernelFunction_Sizer.Add( KernelFunction_ComboBox );
+   KernelFunction_Sizer.AddStretch();
+
+   const char* gridSizeToolTip = "<p>When Gaussian and VariableShape drizzle kernel functions are used, this parameter defines "
+      "the number of discrete function values computed to approximate the double integral of the kernel surface function. More "
+      "function evaluations improve the accuracy of numerical integration at the cost of more computational work. The default "
+      "value of this parameter is 16, meaning that 16*16=256 function values are computed to integrate drizzle kernel functions.</p>";
+
+   GridSize_Label.SetText( "Grid size:" );
+   GridSize_Label.SetFixedWidth( labelWidth1 );
+   GridSize_Label.SetTextAlignment( TextAlign::Right|TextAlign::VertCenter );
+   GridSize_Label.SetToolTip( gridSizeToolTip );
+
+   GridSize_SpinBox.SetRange( int( TheDZKernelGridSizeParameter->MinimumValue() ), int( TheDZKernelGridSizeParameter->MaximumValue() ) );
+   GridSize_SpinBox.SetFixedWidth( editWidth1 );
+   GridSize_SpinBox.SetToolTip( gridSizeToolTip );
+   GridSize_SpinBox.OnValueUpdated( (SpinBox::value_event_handler)&DrizzleIntegrationInterface::__SpinValueUpdated, w );
+
+   GridSize_Sizer.SetSpacing( 4 );
+   GridSize_Sizer.Add( GridSize_Label );
+   GridSize_Sizer.Add( GridSize_SpinBox );
+   GridSize_Sizer.AddStretch();
+
    EnableRejection_CheckBox.SetText( "Enable pixel rejection" );
    EnableRejection_CheckBox.SetToolTip( "<p>When the input drizzle files include pixel rejection data, use them. Pixel "
       "rejection data are generated by the ImageIntegration tool, which you should have used with the <i>generate drizzle "
@@ -697,6 +823,8 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
    Integration_Sizer.SetSpacing( 4 );
    Integration_Sizer.Add( Scale_Sizer );
    Integration_Sizer.Add( DropShrink_NumericControl );
+   Integration_Sizer.Add( KernelFunction_Sizer );
+   Integration_Sizer.Add( GridSize_Sizer );
    Integration_Sizer.Add( EnableRejection_Sizer );
    Integration_Sizer.Add( EnableImageWeighting_Sizer );
    Integration_Sizer.Add( EnableSurfaceSplines_Sizer );
@@ -709,9 +837,7 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
 
    ROI_SectionBar.SetTitle( "Region of Interest" );
    ROI_SectionBar.EnableTitleCheckBox();
-   ROI_SectionBar.OnCheck( (SectionBar::check_event_handler)&DrizzleIntegrationInterface::__CheckSection, w );
    ROI_SectionBar.SetSection( ROI_Control );
-   ROI_SectionBar.OnToggleSection( (SectionBar::section_event_handler)&DrizzleIntegrationInterface::__ToggleSection, w );
    ROI_SectionBar.SetToolTip( "<p>A region of interest (ROI) defines a rectangular subset of the image to perform "
       "the drizzle integration task. This is useful because the task's execution time (and also its memory space "
       "consumption) grows quadratically with the dimensions of the output integrated image. By defining a small ROI "
@@ -720,6 +846,10 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
       "output pixels. You can define ROI coordinates on an integrated image generated by the ImageIntegration tool, or "
       "on a registered image created by StarAlignment, for example by defining a preview and clicking the "
       "<i>from preview</i> button below.</p>" );
+   ROI_SectionBar.OnCheck( (SectionBar::check_event_handler)&DrizzleIntegrationInterface::__CheckSection, w );
+   ROI_SectionBar.OnToggleSection( (SectionBar::section_event_handler)&DrizzleIntegrationInterface::__ToggleSection, w );
+   ROI_SectionBar.OnViewDrag( (Control::view_drag_event_handler)&DrizzleIntegrationInterface::__ViewDrag, w );
+   ROI_SectionBar.OnViewDrop( (Control::view_drop_event_handler)&DrizzleIntegrationInterface::__ViewDrop, w );
 
    const char* roiX0ToolTip = "<p>X pixel coordinate of the upper-left corner of the ROI.</p>";
 
@@ -787,6 +917,8 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
    SelectPreview_Button.SetText( "From Preview" );
    SelectPreview_Button.SetToolTip( "<p>Import ROI coordinates from an existing preview in input reference image coordinates.</p>" );
    SelectPreview_Button.OnClick( (Button::click_event_handler)&DrizzleIntegrationInterface::__Click, w );
+   SelectPreview_Button.OnViewDrag( (Control::view_drag_event_handler)&DrizzleIntegrationInterface::__ViewDrag, w );
+   SelectPreview_Button.OnViewDrop( (Control::view_drop_event_handler)&DrizzleIntegrationInterface::__ViewDrop, w );
 
    ROIHeight_Sizer.SetSpacing( 4 );
    ROIHeight_Sizer.Add( ROIHeight_Label );
@@ -802,6 +934,8 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
 
    ROI_Control.SetSizer( ROI_Sizer );
    ROI_Control.AdjustToContents();
+   ROI_Control.OnViewDrag( (Control::view_drag_event_handler)&DrizzleIntegrationInterface::__ViewDrag, w );
+   ROI_Control.OnViewDrop( (Control::view_drop_event_handler)&DrizzleIntegrationInterface::__ViewDrop, w );
 
    //
 
@@ -830,4 +964,4 @@ DrizzleIntegrationInterface::GUIData::GUIData( DrizzleIntegrationInterface& w )
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF DrizzleIntegrationInterface.cpp - Released 2016/02/21 20:22:43 UTC
+// EOF DrizzleIntegrationInterface.cpp - Released 2017-04-14T23:07:12Z

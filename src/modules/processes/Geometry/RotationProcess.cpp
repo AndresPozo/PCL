@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// RotationProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// RotationProcess.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -60,7 +60,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-RotationProcess* TheRotationProcess = 0;
+RotationProcess* TheRotationProcess = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -72,74 +72,57 @@ RotationProcess::RotationProcess() : MetaProcess()
 {
    TheRotationProcess = this;
 
-   // Instantiate process parameters
-
-   TheRotationAngleRotationParameter = new RotationAngle( this );
-   TheOptimizeFastRotationsRotationParameter = new OptimizeFastRotations( this );
-   TheInterpolationAlgorithmRotationParameter = new InterpolationAlgorithm( this );
-   TheClampingThresholdRotationParameter = new ClampingThreshold( this );
-   TheSmoothnessRotationParameter = new Smoothness( this );
-   TheFillRedRotationParameter = new FillRed( this );
-   TheFillGreenRotationParameter = new FillGreen( this );
-   TheFillBlueRotationParameter = new FillBlue( this );
-   TheFillAlphaRotationParameter = new FillAlpha( this );
+   TheRTRotationAngleParameter = new RotationAngle( this );
+   TheRTOptimizeFastRotationsParameter = new OptimizeFastRotations( this );
+   TheRTInterpolationAlgorithmParameter = new InterpolationAlgorithm( this );
+   TheRTClampingThresholdParameter = new ClampingThreshold( this );
+   TheRTSmoothnessParameter = new Smoothness( this );
+   TheRTFillRedParameter = new FillRed( this );
+   TheRTFillGreenParameter = new FillGreen( this );
+   TheRTFillBlueParameter = new FillBlue( this );
+   TheRTFillAlphaParameter = new FillAlpha( this );
+   TheRTNoGUIMessagesParameter = new NoGUIMessages( this );
 }
-
-// ----------------------------------------------------------------------------
 
 IsoString RotationProcess::Id() const
 {
    return "Rotation";
 }
 
-// ----------------------------------------------------------------------------
-
 IsoString RotationProcess::Category() const
 {
    return "Geometry";
 }
-
-// ----------------------------------------------------------------------------
 
 uint32 RotationProcess::Version() const
 {
    return 0x100;
 }
 
-// ----------------------------------------------------------------------------
-
 String RotationProcess::Description() const
 {
    return "";
 }
-
-// ----------------------------------------------------------------------------
 
 const char** RotationProcess::IconImageXPM() const
 {
    return RotationIcon_XPM;
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessInterface* RotationProcess::DefaultInterface() const
 {
    return TheRotationInterface;
 }
-
-// -------------------------------------------------------------------------
 
 ProcessImplementation* RotationProcess::Create() const
 {
    return new RotationInstance( this );
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessImplementation* RotationProcess::Clone( const ProcessImplementation& p ) const
 {
    const RotationInstance* instPtr = dynamic_cast<const RotationInstance*>( &p );
-   return (instPtr != 0) ? new RotationInstance( *instPtr ) : 0;
+   return (instPtr != nullptr) ? new RotationInstance( *instPtr ) : nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -147,4 +130,4 @@ ProcessImplementation* RotationProcess::Clone( const ProcessImplementation& p ) 
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF RotationProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF RotationProcess.cpp - Released 2017-04-14T23:07:12Z

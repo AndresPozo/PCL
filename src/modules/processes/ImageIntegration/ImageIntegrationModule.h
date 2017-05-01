@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// ImageIntegrationModule.h - Released 2016/02/21 20:22:43 UTC
+// ImageIntegrationModule.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -59,8 +59,6 @@ namespace pcl
 {
 
 // ----------------------------------------------------------------------------
-// ImageIntegrationModule
-// ----------------------------------------------------------------------------
 
 class ImageIntegrationModule : public MetaModule
 {
@@ -77,7 +75,6 @@ public:
    virtual String TradeMarks() const;
    virtual String OriginalFileName() const;
    virtual void GetReleaseDate( int& year, int& month, int& day ) const;
-
    virtual void OnLoad();
    virtual void OnUnload();
 };
@@ -89,4 +86,4 @@ public:
 #endif   // __ImageIntegrationModule_h
 
 // ----------------------------------------------------------------------------
-// EOF ImageIntegrationModule.h - Released 2016/02/21 20:22:43 UTC
+// EOF ImageIntegrationModule.h - Released 2017-04-14T23:07:12Z

@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// FastRotationInterface.h - Released 2016/02/21 20:22:42 UTC
+// FastRotationInterface.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -65,8 +65,6 @@ namespace pcl
 {
 
 // ----------------------------------------------------------------------------
-// FastRotationInterface
-// ----------------------------------------------------------------------------
 
 class FastRotationInterface : public ProcessInterface
 {
@@ -82,7 +80,7 @@ public:
    virtual void ApplyInstance() const;
    virtual void ResetInstance();
 
-   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& /*flags*/ );
+   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& flags );
 
    virtual ProcessImplementation* NewProcess() const;
 
@@ -92,13 +90,9 @@ public:
 
    virtual bool ImportProcess( const ProcessImplementation& );
 
-   // -------------------------------------------------------------------------
-
 private:
 
    FastRotationInstance instance;
-
-   // -------------------------------------------------------------------------
 
    struct GUIData
    {
@@ -115,11 +109,11 @@ private:
       VerticalSizer  Global_Sizer;
    };
 
-   GUIData* GUI;
+   GUIData* GUI = nullptr;
 
    void UpdateControls();
 
-   void TransformButtonClick( Button& sender, bool checked );
+   void __ButtonClick( Button& sender, bool checked );
 
    friend struct GUIData;
 };
@@ -137,4 +131,4 @@ PCL_END_LOCAL
 #endif   // __FastRotationInterface_h
 
 // ----------------------------------------------------------------------------
-// EOF FastRotationInterface.h - Released 2016/02/21 20:22:42 UTC
+// EOF FastRotationInterface.h - Released 2017-04-14T23:07:12Z

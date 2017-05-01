@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// IntegerResampleInterface.h - Released 2016/02/21 20:22:42 UTC
+// IntegerResampleInterface.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -53,25 +53,22 @@
 #ifndef __IntegerResampleInterface_h
 #define __IntegerResampleInterface_h
 
-#include <pcl/ProcessInterface.h>
-
-#include <pcl/Sizer.h>
-#include <pcl/SectionBar.h>
-#include <pcl/ViewList.h>
-#include <pcl/Label.h>
-#include <pcl/NumericControl.h>
-#include <pcl/RadioButton.h>
-#include <pcl/SpinBox.h>
 #include <pcl/CheckBox.h>
 #include <pcl/ComboBox.h>
+#include <pcl/Label.h>
+#include <pcl/NumericControl.h>
+#include <pcl/ProcessInterface.h>
+#include <pcl/RadioButton.h>
+#include <pcl/SectionBar.h>
+#include <pcl/Sizer.h>
+#include <pcl/SpinBox.h>
+#include <pcl/ViewList.h>
 
 #include "IntegerResampleInstance.h"
 
 namespace pcl
 {
 
-// ----------------------------------------------------------------------------
-// IntegerResampleInterface
 // ----------------------------------------------------------------------------
 
 class IntegerResampleInterface : public ProcessInterface
@@ -91,7 +88,7 @@ public:
    virtual void TrackViewUpdated( bool active );
    virtual void ResetInstance();
 
-   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& /*flags*/ );
+   virtual bool Launch( const MetaProcess&, const ProcessImplementation*, bool& dynamic, unsigned& flags );
 
    virtual ProcessImplementation* NewProcess() const;
 
@@ -104,16 +101,13 @@ public:
    virtual void ImageUpdated( const View& );
    virtual void ImageFocused( const View& );
 
-   // -------------------------------------------------------------------------
-
 private:
 
    IntegerResampleInstance instance;
 
-   // Source dimensions in pixels
-   int sourceWidth, sourceHeight;
-
-   // -------------------------------------------------------------------------
+   // Sample source dimensions in pixels.
+   int sourceWidth = 1000;
+   int sourceHeight = 1000;
 
    struct GUIData
    {
@@ -171,26 +165,21 @@ private:
             CheckBox          ForceResolution_CheckBox;
    };
 
-   GUIData* GUI;
+   GUIData* GUI = nullptr;
 
    void UpdateControls();
 
-   //
-   // GUI Event Handlers
-   //
-
    void __ViewList_ViewSelected( ViewList& sender, View& view );
-
    void __ResampleFactor_ValueUpdated( SpinBox& sender, int value );
    void __ResampleType_ButtonClick( Button& sender, bool checked );
    void __DownsampleMode_ItemSelected( ComboBox& sender, int itemIndex );
-
    void __Width_ValueUpdated( NumericEdit& sender, double value );
    void __Height_ValueUpdated( NumericEdit& sender, double value );
-
    void __Resolution_ValueUpdated( NumericEdit& sender, double value );
    void __Units_ButtonClick( Button& sender, bool checked );
    void __ForceResolution_ButtonClick( Button& sender, bool checked );
+   void __ViewDrag( Control& sender, const Point& pos, const View& view, unsigned modifiers, bool& wantsView );
+   void __ViewDrop( Control& sender, const Point& pos, const View& view, unsigned modifiers );
 
    friend struct GUIData;
 };
@@ -208,4 +197,4 @@ PCL_END_LOCAL
 #endif   // __IntegerResampleInterface_h
 
 // ----------------------------------------------------------------------------
-// EOF IntegerResampleInterface.h - Released 2016/02/21 20:22:42 UTC
+// EOF IntegerResampleInterface.h - Released 2017-04-14T23:07:12Z

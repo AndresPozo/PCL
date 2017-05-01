@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// ImageIntegrationProcess.cpp - Released 2016/02/21 20:22:43 UTC
+// ImageIntegrationProcess.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -55,16 +55,12 @@
 #include "ImageIntegrationInstance.h"
 #include "ImageIntegrationInterface.h"
 
-#ifdef __PCL_WINDOWS
-# include <stdio.h>  // for _setmaxstdio()
-#endif
-
 namespace pcl
 {
 
 // ----------------------------------------------------------------------------
 
-ImageIntegrationProcess* TheImageIntegrationProcess = 0;
+ImageIntegrationProcess* TheImageIntegrationProcess = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -125,6 +121,8 @@ ImageIntegrationProcess::ImageIntegrationProcess() : MetaProcess()
    new IIEvaluateNoise( this );
    new IIMRSMinDataFraction( this );
    new IINoGUIMessages( this );
+   new IIUseFileThreads( this );
+   new IIFileThreadOverload( this );
 
    new IIIntegrationImageId( this );
    new IILowRejectionMapImageId( this );
@@ -170,15 +168,6 @@ ImageIntegrationProcess::ImageIntegrationProcess() : MetaProcess()
    new IIImageRejectedHighRK( TheIIImageDataParameter );
    new IIImageRejectedHighG( TheIIImageDataParameter );
    new IIImageRejectedHighB( TheIIImageDataParameter );
-
-#ifdef __PCL_WINDOWS
-   /*
-    * Windows-specific: Set the maximum possible number of simultaneously open
-    * files at the "stdio level". This is necessary because CFITSIO uses
-    * fopen() instead of native Win32 calls (e.g. CreateFile).
-    */
-   _setmaxstdio( 2048 );
-#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -237,7 +226,7 @@ ProcessImplementation* ImageIntegrationProcess::Create() const
 ProcessImplementation* ImageIntegrationProcess::Clone( const ProcessImplementation& p ) const
 {
    const ImageIntegrationInstance* instPtr = dynamic_cast<const ImageIntegrationInstance*>( &p );
-   return (instPtr != 0) ? new ImageIntegrationInstance( *instPtr ) : 0;
+   return (instPtr != nullptr) ? new ImageIntegrationInstance( *instPtr ) : nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -245,4 +234,4 @@ ProcessImplementation* ImageIntegrationProcess::Clone( const ProcessImplementati
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF ImageIntegrationProcess.cpp - Released 2016/02/21 20:22:43 UTC
+// EOF ImageIntegrationProcess.cpp - Released 2017-04-14T23:07:12Z

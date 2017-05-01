@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// CropInstance.h - Released 2016/02/21 20:22:42 UTC
+// CropInstance.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -73,10 +73,9 @@ public:
 
    virtual void Assign( const ProcessImplementation& );
 
-   virtual bool IsMaskable( const View&, const ImageWindow& ) const
-   {
-      return false;
-   }
+   virtual bool IsMaskable( const View&, const ImageWindow& ) const;
+
+   virtual UndoFlags UndoMode( const View& ) const;
 
    virtual bool CanExecuteOn( const View&, pcl::String& whyNot ) const;
    virtual bool BeforeExecution( View& );
@@ -94,6 +93,7 @@ private:
    pcl_bool p_metric;           // Metric resolution?
    pcl_bool p_forceResolution;  // Set resolution of target image window
    DVector  p_fillColor;        // Filling values for extended areas (R/K,G,B,A)
+   pcl_bool p_noGUIMessages;    // only show warning messages on the console
 
    friend class CropEngine;
    friend class CropInterface;
@@ -106,4 +106,4 @@ private:
 #endif   // __CropInstance_h
 
 // ----------------------------------------------------------------------------
-// EOF CropInstance.h - Released 2016/02/21 20:22:42 UTC
+// EOF CropInstance.h - Released 2017-04-14T23:07:12Z

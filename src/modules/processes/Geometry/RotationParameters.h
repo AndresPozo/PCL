@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// RotationParameters.h - Released 2016/02/21 20:22:42 UTC
+// RotationParameters.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -62,18 +62,19 @@ PCL_BEGIN_LOCAL
 
 // ----------------------------------------------------------------------------
 
-extern RotationAngle* TheRotationAngleRotationParameter;
+extern RotationAngle* TheRTRotationAngleParameter;
+extern OptimizeFastRotations* TheRTOptimizeFastRotationsParameter;
 
-extern OptimizeFastRotations* TheOptimizeFastRotationsRotationParameter;
+extern InterpolationAlgorithm* TheRTInterpolationAlgorithmParameter;
+extern ClampingThreshold* TheRTClampingThresholdParameter;
+extern Smoothness* TheRTSmoothnessParameter;
 
-extern InterpolationAlgorithm* TheInterpolationAlgorithmRotationParameter;
-extern ClampingThreshold* TheClampingThresholdRotationParameter;
-extern Smoothness* TheSmoothnessRotationParameter;
+extern FillRed* TheRTFillRedParameter;
+extern FillGreen* TheRTFillGreenParameter;
+extern FillBlue* TheRTFillBlueParameter;
+extern FillAlpha* TheRTFillAlphaParameter;
 
-extern FillRed* TheFillRedRotationParameter;
-extern FillGreen* TheFillGreenRotationParameter;
-extern FillBlue* TheFillBlueRotationParameter;
-extern FillAlpha* TheFillAlphaRotationParameter;
+extern NoGUIMessages* TheRTNoGUIMessagesParameter;
 
 // ----------------------------------------------------------------------------
 
@@ -84,4 +85,4 @@ PCL_END_LOCAL
 #endif   // __RotationParameters_h
 
 // ----------------------------------------------------------------------------
-// EOF RotationParameters.h - Released 2016/02/21 20:22:42 UTC
+// EOF RotationParameters.h - Released 2017-04-14T23:07:12Z

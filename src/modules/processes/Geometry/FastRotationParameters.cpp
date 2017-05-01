@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// FastRotationParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// FastRotationParameters.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -57,26 +57,27 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-FastRotationMode* TheFastRotationModeParameter = 0;
+FRMode*        TheFRModeParameter = nullptr;
+NoGUIMessages* TheFRNoGUIMessagesParameter = nullptr;
 
 // ----------------------------------------------------------------------------
 
-FastRotationMode::FastRotationMode( MetaProcess* p ) : MetaEnumeration( p )
+FRMode::FRMode( MetaProcess* P ) : MetaEnumeration( P )
 {
-   TheFastRotationModeParameter = this;
+   TheFRModeParameter = this;
 }
 
-IsoString FastRotationMode::Id() const
+IsoString FRMode::Id() const
 {
    return "mode";
 }
 
-size_type FastRotationMode::NumberOfElements() const
+size_type FRMode::NumberOfElements() const
 {
    return NumberOfModes;
 }
 
-IsoString FastRotationMode::ElementId( size_type i ) const
+IsoString FRMode::ElementId( size_type i ) const
 {
    switch ( i )
    {
@@ -89,12 +90,12 @@ IsoString FastRotationMode::ElementId( size_type i ) const
    }
 }
 
-int FastRotationMode::ElementValue( size_type i ) const
+int FRMode::ElementValue( size_type i ) const
 {
    return int( i );
 }
 
-size_type FastRotationMode::DefaultValueIndex() const
+size_type FRMode::DefaultValueIndex() const
 {
    return Default;
 }
@@ -104,4 +105,4 @@ size_type FastRotationMode::DefaultValueIndex() const
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF FastRotationParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF FastRotationParameters.cpp - Released 2017-04-14T23:07:12Z

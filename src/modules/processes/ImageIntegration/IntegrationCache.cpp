@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// IntegrationCache.cpp - Released 2016/02/21 20:22:43 UTC
+// IntegrationCache.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -59,7 +59,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-IntegrationCache* TheIntegrationCache = 0;
+IntegrationCache* TheIntegrationCache = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -199,7 +199,7 @@ bool IntegrationCacheItem::GetDataFromTokens( const StringList& tokens )
 
 IntegrationCache::IntegrationCache() : FileDataCache( "/ImageIntegration/Cache" )
 {
-   if ( TheIntegrationCache == 0 )
+   if ( TheIntegrationCache == nullptr )
       TheIntegrationCache = this;
    Load();
 }
@@ -207,7 +207,7 @@ IntegrationCache::IntegrationCache() : FileDataCache( "/ImageIntegration/Cache" 
 IntegrationCache::~IntegrationCache()
 {
    if ( TheIntegrationCache == this )
-      TheIntegrationCache = 0;
+      TheIntegrationCache = nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -215,4 +215,4 @@ IntegrationCache::~IntegrationCache()
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF IntegrationCache.cpp - Released 2016/02/21 20:22:43 UTC
+// EOF IntegrationCache.cpp - Released 2017-04-14T23:07:12Z

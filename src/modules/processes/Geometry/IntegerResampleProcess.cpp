@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// IntegerResampleProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// IntegerResampleProcess.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -60,7 +60,7 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-IntegerResampleProcess* TheIntegerResampleProcess = 0;
+IntegerResampleProcess* TheIntegerResampleProcess = nullptr;
 
 // ----------------------------------------------------------------------------
 
@@ -72,71 +72,54 @@ IntegerResampleProcess::IntegerResampleProcess() : MetaProcess()
 {
    TheIntegerResampleProcess = this;
 
-   // Instantiate process parameters
-
-   new ZoomFactor( this );
-   new IntegerDownsamplingMode( this );
-   TheXResolutionIntegerResampleParameter = new XResolution( this );
-   TheYResolutionIntegerResampleParameter = new YResolution( this );
-   TheMetricResolutionIntegerResampleParameter = new MetricResolution( this );
-   TheForceResolutionIntegerResampleParameter = new ForceResolution( this );
+   new IRZoomFactor( this );
+   new IRDownsamplingMode( this );
+   TheIRXResolutionParameter = new XResolution( this );
+   TheIRYResolutionParameter = new YResolution( this );
+   TheIRMetricResolutionParameter = new MetricResolution( this );
+   TheIRForceResolutionParameter = new ForceResolution( this );
+   TheIRNoGUIMessagesParameter = new NoGUIMessages( this );
 }
-
-// ----------------------------------------------------------------------------
 
 IsoString IntegerResampleProcess::Id() const
 {
    return "IntegerResample";
 }
 
-// ----------------------------------------------------------------------------
-
 IsoString IntegerResampleProcess::Category() const
 {
    return "Geometry";
 }
-
-// ----------------------------------------------------------------------------
 
 uint32 IntegerResampleProcess::Version() const
 {
    return 0x100;
 }
 
-// ----------------------------------------------------------------------------
-
 String IntegerResampleProcess::Description() const
 {
    return "";
 }
-
-// ----------------------------------------------------------------------------
 
 const char** IntegerResampleProcess::IconImageXPM() const
 {
    return IntegerResampleIcon_XPM;
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessInterface* IntegerResampleProcess::DefaultInterface() const
 {
    return TheIntegerResampleInterface;
 }
-
-// -------------------------------------------------------------------------
 
 ProcessImplementation* IntegerResampleProcess::Create() const
 {
    return new IntegerResampleInstance( this );
 }
 
-// ----------------------------------------------------------------------------
-
 ProcessImplementation* IntegerResampleProcess::Clone( const ProcessImplementation& p ) const
 {
    const IntegerResampleInstance* instPtr = dynamic_cast<const IntegerResampleInstance*>( &p );
-   return (instPtr != 0) ? new IntegerResampleInstance( *instPtr ) : 0;
+   return (instPtr != nullptr) ? new IntegerResampleInstance( *instPtr ) : nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -144,4 +127,4 @@ ProcessImplementation* IntegerResampleProcess::Clone( const ProcessImplementatio
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF IntegerResampleProcess.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF IntegerResampleProcess.cpp - Released 2017-04-14T23:07:12Z

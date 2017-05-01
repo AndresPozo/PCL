@@ -2,14 +2,14 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// pcl/SurfaceSplines.h - Released 2016/02/21 20:22:12 UTC
+// pcl/SurfaceSplines.h - Released 2017-04-14T23:04:40Z
 // ----------------------------------------------------------------------------
 // This file is part of the PixInsight Class Library (PCL).
 // PCL is a multiplatform C++ framework for development of PixInsight modules.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -71,119 +71,6 @@ namespace pcl
 // ----------------------------------------------------------------------------
 
 /*!
- * \class SerializableSurfaceSpline
- * \brief An interpolating/approximating two-dimensional surface spline
- *        serializable as drizzle data (.drz format)
- */
-template <typename T>
-class SerializableSurfaceSpline : public SurfaceSpline<T>
-{
-public:
-
-   /*!
-    * Represents a vector of coordinates or spline coefficients.
-    */
-   typedef typename SurfaceSpline<T>::vector_type  vector_type;
-
-   /*!
-    * Default constructor.
-    */
-   SerializableSurfaceSpline() = default;
-
-   /*!
-    * Constructor from base class.
-    */
-   SerializableSurfaceSpline( const SurfaceSpline<T>& S ) :
-      SurfaceSpline<T>( S )
-   {
-   }
-
-   /*!
-    * Virtual destructor.
-    */
-   virtual ~SerializableSurfaceSpline()
-   {
-   }
-
-   /*!
-    * Copy assignment from base class. Returns a reference to this object.
-    */
-   SerializableSurfaceSpline& operator =( const SurfaceSpline<T>& S )
-   {
-      return SurfaceSpline<T>::operator =( S );
-   }
-
-   /*!
-    * Serializes this spline as drizzle integration data in .drz plain text
-    * format.
-    *
-    * The generated data will be appended to the specified file, which must
-    * allow write access, and will contain all node coordinates, node weights
-    * (for an approximating spline only), reference coordinates, and spline
-    * coefficients.
-    */
-   void ToDrizzleData( File& f ) const
-   {
-      if ( this->IsValid() )
-      {
-         f.OutText( "x{" );
-         for ( int i = 0, n = this->m_x.Length()-1; ; )
-         {
-            f.OutText( IsoString().Format( "%.16g,", this->m_x[i] ) );
-            if ( ++i == n )
-            {
-               f.OutText( IsoString().Format( "%.16g}", this->m_x[n] ) );
-               break;
-            }
-         }
-         f.OutText( "y{" );
-         for ( int i = 0, n = this->m_y.Length()-1; ; )
-         {
-            f.OutText( IsoString().Format( "%.16g,", this->m_y[i] ) );
-            if ( ++i == n )
-            {
-               f.OutText( IsoString().Format( "%.16g}", this->m_y[n] ) );
-               break;
-            }
-         }
-         f.OutText( IsoString().Format( "r0{%.16g}", this->m_r0 ) );
-         f.OutText( IsoString().Format( "x0{%.16g}", this->m_x0 ) );
-         f.OutText( IsoString().Format( "y0{%.16g}", this->m_y0 ) );
-         f.OutText( IsoString().Format( "m{%d}", this->m_order ) );
-         f.OutText( IsoString().Format( "r{%.8g}", this->m_smoothing ) );
-         if ( this->m_smoothing > 0 )
-            if ( !this->m_weights.IsEmpty() )
-            {
-               f.OutText( "w{" );
-               for ( int i = 0, n = this->m_weights.Length()-1; ; )
-               {
-                  f.OutText( IsoString().Format( "%.8g,", this->m_weights[i] ) );
-                  if ( ++i == n )
-                  {
-                     f.OutText( IsoString().Format( "%.8g}", this->m_weights[n] ) );
-                     break;
-                  }
-               }
-            }
-         f.OutText( "s{" );
-         for ( int i = 0, n = this->m_spline.Length()-1; ; )
-         {
-            f.OutText( IsoString().Format( "%.16g,", this->m_spline[i] ) );
-            if ( ++i == n )
-            {
-               f.OutText( IsoString().Format( "%.16g}", this->m_spline[n] ) );
-               break;
-            }
-         }
-      }
-   }
-
-   friend class DrizzleSplineDecoder;
-};
-
-// ----------------------------------------------------------------------------
-
-/*!
  * \class PointSurfaceSpline
  * \brief Vector surface spline interpolation/approximation in two dimensions
  *
@@ -194,7 +81,7 @@ public:
  * respectively, of an interpolation point. In addition, the scalar types of
  * the x and y point members must support conversion to double semantics.
  */
-template <class P = FPoint>
+template <class P = DPoint>
 class PointSurfaceSpline
 {
 public:
@@ -202,17 +89,17 @@ public:
    /*!
     * Represents an interpolation point in two dimensions.
     */
-   typedef P                                 point;
+   typedef P                     point;
 
    /*!
     * Represents a sequence of interpolation points.
     */
-   typedef Array<point>                      point_list;
+   typedef Array<point>          point_list;
 
    /*!
     * Represents a coordinate interpolating/approximating surface spline.
     */
-   typedef SerializableSurfaceSpline<double> spline;
+   typedef SurfaceSpline<double> spline;
 
    /*!
     * Default constructor. Yields an empty instance that cannot be used without
@@ -336,6 +223,49 @@ public:
    }
 
    /*!
+    * Returns an approximation to the inverse surface spline of this object.
+    *
+    * The returned object can be used to perform an inverse interpolation:
+    * Given an interpolation point P2, the returned spline will interpolate the
+    * corresponding node point P1. See Initialize() for more information on
+    * spline initialization.
+    *
+    * In general, the returned object can only provide an approximation to the
+    * inverse of the underlying coordinate transformation. In particular, if
+    * this object has been initialized as an approximating surface spline, its
+    * inverse spline will compute node point coordinates from approximate
+    * (smoothed) interpolated coordinates, instead of the original ones.
+    *
+    * If two or more interpolation points were identical when this object was
+    * initialized, calling this member function may lead to an ill-conditioned
+    * linear system. In such case, an Error exception will be thrown.
+    *
+    * If this object has not been initialized, this function returns an
+    * uninitialized %PointSurfaceSpline object.
+    */
+   PointSurfaceSpline Inverse() const
+   {
+      PointSurfaceSpline inverse;
+      if ( IsValid() )
+      {
+         DVector X = m_Sx.X(),
+                 Y = m_Sx.Y(),
+                 Zx( X.Length() ),
+                 Zy( X.Length() );
+         for ( int i = 0; i < X.Length(); ++i )
+         {
+            Zx[i] = m_Sx( X[i], Y[i] );
+            Zy[i] = m_Sy( X[i], Y[i] );
+         }
+         inverse.m_Sx.SetOrder( m_Sx.Order() );
+         inverse.m_Sy.SetOrder( m_Sy.Order() );
+         inverse.m_Sx.Initialize( Zx.Begin(), Zy.Begin(), X.Begin(), X.Length() );
+         inverse.m_Sy.Initialize( Zx.Begin(), Zy.Begin(), Y.Begin(), X.Length() );
+      }
+      return inverse;
+   }
+
+   /*!
     * Deallocates internal structures, yielding an empty spline that cannot be
     * used before a new call to Initialize().
     */
@@ -352,27 +282,6 @@ public:
    bool IsValid() const
    {
       return m_Sx.IsValid() && m_Sy.IsValid();
-   }
-
-   /*!
-    * Serializes this point spline as drizzle integration data in .drz plain
-    * text format.
-    *
-    * The generated data will be appended to the specified file, which must
-    * allow write access, and will contain all node coordinates, node weights
-    * (for an approximating spline only), reference coordinates, and spline
-    * coefficients in the X and Y directions.
-    */
-   void ToDrizzleData( File& f ) const
-   {
-      if ( IsValid() )
-      {
-         f.OutText( "Sx{" );
-         m_Sx.ToDrizzleData( f );
-         f.OutText( "}Sy{" );
-         m_Sy.ToDrizzleData( f );
-         f.OutText( "}" );
-      }
    }
 
    /*!
@@ -395,8 +304,9 @@ public:
 
 private:
 
-   spline m_Sx, m_Sy;   // the surface splines in the X and Y directions.
+   spline m_Sx, m_Sy; // the surface splines in the X and Y plane directions.
 
+   friend class DrizzleData;
    friend class DrizzleDataDecoder;
 };
 
@@ -456,7 +366,8 @@ public:
     *                within the boundaries of this rectangle at discrete
     *                \a delta coordinate intervals.
     *
-    * \param delta   Grid distance for discrete initialization. Must be > 0.
+    * \param delta   Grid distance for calculation of discrete function values.
+    *                Must be > 0.
     *
     * \param S       Reference to a PointSurfaceSpline object that will be used
     *                as the underlying interpolation to compute interpolation
@@ -496,10 +407,11 @@ public:
          threads.Add( new GridInitializationThread<P>( *this, S,
                                                        i*rowsPerThread,
                                                        (j < numberOfThreads) ? j*rowsPerThread : rows ) );
-      for ( int i = 0; i < numberOfThreads; ++i )
-         threads[i].Start( ThreadPriority::DefaultMax, i );
-      for ( int i = 0; i < numberOfThreads; ++i )
-         threads[i].Wait();
+      int n = 0;
+      for ( GridInitializationThread<P>& thread : threads )
+         thread.Start( ThreadPriority::DefaultMax, n++ );
+      for ( GridInitializationThread<P>& thread : threads )
+         thread.Wait();
       threads.Destroy();
 
       m_Ix.Initialize( m_Gx.Begin(), cols, rows );
@@ -513,6 +425,24 @@ public:
    bool IsValid() const
    {
       return !(m_Gx.IsEmpty() || m_Gy.IsEmpty());
+   }
+
+   /*!
+    * Returns the current interpolation reference rectangle. See Initialize()
+    * for more information.
+    */
+   const Rect& ReferenceRect() const
+   {
+      return m_rect;
+   }
+
+   /*!
+    * Returns the current grid distance for calculation of discrete function
+    * values. See Initialize() for more information.
+    */
+   int Delta() const
+   {
+      return m_delta;
    }
 
    /*!
@@ -617,4 +547,4 @@ private:
 #endif   // __PCL_SurfaceSplines_h
 
 // ----------------------------------------------------------------------------
-// EOF pcl/SurfaceSplines.h - Released 2016/02/21 20:22:12 UTC
+// EOF pcl/SurfaceSplines.h - Released 2017-04-14T23:04:40Z

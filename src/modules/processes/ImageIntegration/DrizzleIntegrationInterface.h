@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// DrizzleIntegrationInterface.h - Released 2016/02/21 20:22:43 UTC
+// DrizzleIntegrationInterface.h - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -54,6 +54,7 @@
 #define __DrizzleIntegrationInterface_h
 
 #include <pcl/CheckBox.h>
+#include <pcl/ComboBox.h>
 #include <pcl/NumericControl.h>
 #include <pcl/ProcessInterface.h>
 #include <pcl/PushButton.h>
@@ -137,6 +138,12 @@ private:
             Label             Scale_Label;
             SpinBox           Scale_SpinBox;
          NumericControl    DropShrink_NumericControl;
+         HorizontalSizer   KernelFunction_Sizer;
+            Label             KernelFunction_Label;
+            ComboBox          KernelFunction_ComboBox;
+         HorizontalSizer   GridSize_Sizer;
+            Label             GridSize_Label;
+            SpinBox           GridSize_SpinBox;
          HorizontalSizer   EnableRejection_Sizer;
             CheckBox          EnableRejection_CheckBox;
          HorizontalSizer   EnableImageWeighting_Sizer;
@@ -164,9 +171,7 @@ private:
             PushButton        SelectPreview_Button;
    };
 
-   GUIData* GUI;
-
-   // Interface Updates
+   GUIData* GUI = nullptr;
 
    void UpdateControls();
    void UpdateInputDataItem( size_type );
@@ -176,17 +181,20 @@ private:
    void UpdateIntegrationControls();
    void UpdateROIControls();
 
-   // Event Handlers
-
    void __ValueUpdated( NumericEdit& sender, double value );
    void __CurrentNodeUpdated( TreeBox& sender, TreeBox::Node& current, TreeBox::Node& oldCurrent );
    void __NodeActivated( TreeBox& sender, TreeBox::Node& node, int col );
    void __NodeSelectionUpdated( TreeBox& sender );
    void __Click( Button& sender, bool checked );
+   void __ItemSelected( ComboBox& sender, int itemIndex );
    void __EditCompleted( Edit& sender );
    void __SpinValueUpdated( SpinBox& sender, int value );
    void __ToggleSection( SectionBar& sender, Control& section, bool start );
    void __CheckSection( SectionBar& sender, bool checked );
+   void __FileDrag( Control& sender, const Point& pos, const StringList& files, unsigned modifiers, bool& wantsFiles );
+   void __FileDrop( Control& sender, const Point& pos, const StringList& files, unsigned modifiers );
+   void __ViewDrag( Control& sender, const Point& pos, const View& view, unsigned modifiers, bool& wantsView );
+   void __ViewDrop( Control& sender, const Point& pos, const View& view, unsigned modifiers );
 
    friend struct GUIData;
 };
@@ -204,4 +212,4 @@ PCL_END_LOCAL
 #endif   // __DrizzleIntegrationInterface_h
 
 // ----------------------------------------------------------------------------
-// EOF DrizzleIntegrationInterface.h - Released 2016/02/21 20:22:43 UTC
+// EOF DrizzleIntegrationInterface.h - Released 2017-04-14T23:07:12Z

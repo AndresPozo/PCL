@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// RotationParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// RotationParameters.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -57,19 +57,20 @@ namespace pcl
 
 // ----------------------------------------------------------------------------
 
-RotationAngle*          TheRotationAngleRotationParameter = 0;
-OptimizeFastRotations*  TheOptimizeFastRotationsRotationParameter = 0;
-InterpolationAlgorithm* TheInterpolationAlgorithmRotationParameter = 0;
-ClampingThreshold*      TheClampingThresholdRotationParameter = 0;
-Smoothness*             TheSmoothnessRotationParameter = 0;
-FillRed*                TheFillRedRotationParameter = 0;
-FillGreen*              TheFillGreenRotationParameter = 0;
-FillBlue*               TheFillBlueRotationParameter = 0;
-FillAlpha*              TheFillAlphaRotationParameter = 0;
+RotationAngle*          TheRTRotationAngleParameter = nullptr;
+OptimizeFastRotations*  TheRTOptimizeFastRotationsParameter = nullptr;
+InterpolationAlgorithm* TheRTInterpolationAlgorithmParameter = nullptr;
+ClampingThreshold*      TheRTClampingThresholdParameter = nullptr;
+Smoothness*             TheRTSmoothnessParameter = nullptr;
+FillRed*                TheRTFillRedParameter = nullptr;
+FillGreen*              TheRTFillGreenParameter = nullptr;
+FillBlue*               TheRTFillBlueParameter = nullptr;
+FillAlpha*              TheRTFillAlphaParameter = nullptr;
+NoGUIMessages*          TheRTNoGUIMessagesParameter = nullptr;
 
 // ----------------------------------------------------------------------------
 
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF RotationParameters.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF RotationParameters.cpp - Released 2017-04-14T23:07:12Z

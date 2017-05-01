@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard ImageIntegration Process Module Version 01.09.04.0322
+// Standard ImageIntegration Process Module Version 01.12.01.0368
 // ----------------------------------------------------------------------------
-// ImageIntegrationInstance.cpp - Released 2016/02/21 20:22:43 UTC
+// ImageIntegrationInstance.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard ImageIntegration PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -54,6 +54,7 @@
 #include "IntegrationCache.h"
 
 #include <pcl/ATrousWaveletTransform.h>
+#include <pcl/AutoPointer.h>
 #include <pcl/DrizzleDataDecoder.h>
 #include <pcl/ErrorHandler.h>
 #include <pcl/FITSHeaderKeyword.h>
@@ -139,6 +140,8 @@ ImageIntegrationInstance::ImageIntegrationInstance( const MetaProcess* m ) :
    p_evaluateNoise( TheIIEvaluateNoiseParameter->DefaultValue() ),
    p_mrsMinDataFraction( TheIIMRSMinDataFractionParameter->DefaultValue() ),
    p_noGUIMessages( TheIINoGUIMessagesParameter->DefaultValue() ),
+   p_useFileThreads( TheIIUseFileThreadsParameter->DefaultValue() ),
+   p_fileThreadOverload( TheIIFileThreadOverloadParameter->DefaultValue() ),
    o_output()
 {
 }
@@ -196,6 +199,8 @@ void ImageIntegrationInstance::Assign( const ProcessImplementation& p )
       p_evaluateNoise           = x->p_evaluateNoise;
       p_mrsMinDataFraction      = x->p_mrsMinDataFraction;
       p_noGUIMessages           = x->p_noGUIMessages;
+      p_useFileThreads          = x->p_useFileThreads;
+      p_fileThreadOverload      = x->p_fileThreadOverload;
       o_output                  = x->o_output;
    }
 }
@@ -219,7 +224,6 @@ bool ImageIntegrationInstance::CanExecuteGlobal( String& whyNot ) const
       return false;
    }
 
-   whyNot.Clear();
    return true;
 }
 
@@ -284,7 +288,6 @@ static DVector EvaluateNoise( const ImageVariant& image, float minDataFraction )
       image->SelectChannel( c );
 
       double s0 = 0;
-
       for ( int n = 4; ; )
       {
          ATrousWaveletTransform W( B3S, n );
@@ -309,7 +312,7 @@ static DVector EvaluateNoise( const ImageVariant& image, float minDataFraction )
 
    image->Status().Complete();
    image->Status().EnableInitialization();
-   image->SetStatusCallback( 0 );
+   image->SetStatusCallback( nullptr );
    image->ResetSelections();
 
    return noise;
@@ -376,7 +379,7 @@ static DVector EvaluateIKSS( DVector& location, const GenericImage<P>& image, do
       {
          double a; P::FromSample( a, *i );
          if ( a > low && a < high )
-            A.Add( a );
+            A << a;
       }
 
       A.Sort();
@@ -463,24 +466,15 @@ class IntegrationFile
 {
 public:
 
-   static void Open( const String& path, const String& drzPath, const ImageIntegrationInstance* instance )
-   {
-      IntegrationFile* file = new IntegrationFile;
-      s_files.Add( file );
-      file->Open( path, drzPath, instance, s_files.Length() == 1 );
-   }
+   static void OpenFiles( const ImageIntegrationInstance& );
 
    virtual ~IntegrationFile()
    {
-      if ( m_file != 0 )
-         delete m_file, m_file = 0;
-      if ( m_image != 0 )
-         delete m_image, m_image = 0;
    }
 
    String Path() const
    {
-      return (m_file != 0) ? m_file->FilePath() : String();
+      return m_file.IsValid() ? m_file->FilePath() : String();
    }
 
    String DrizzleDataPath() const
@@ -495,9 +489,74 @@ public:
       return m_image->ScanLine( row, m_currentChannel );
    }
 
+   bool HasLocation() const
+   {
+      return !m_location.IsEmpty();
+   }
+
+   double Location( int c ) const
+   {
+      return m_location[c];
+   }
+
+   bool HasDispersion() const
+   {
+      return !m_dispersion.IsEmpty();
+   }
+
+   double Dispersion( int c ) const
+   {
+      return m_dispersion[c];
+   }
+
+   bool HasNoise() const
+   {
+      return !m_noise.IsEmpty();
+   }
+
+   double Noise( int c ) const
+   {
+      return m_noise[c];
+   }
+
+   bool HasScale() const
+   {
+      return !m_scale.IsEmpty();
+   }
+
    double Scale( int c ) const
    {
       return m_scale[c];
+   }
+
+   bool HasZeroOffset() const
+   {
+      return HasLocation();
+   }
+
+   double ZeroOffset( int c ) const
+   {
+      return s_files[0]->m_location[c] - m_location[c];
+   }
+
+   bool HasWeight() const
+   {
+      return !m_weight.IsEmpty();
+   }
+
+   double Weight( int c ) const
+   {
+      return m_weight[c];
+   }
+
+   bool HasImageWeight() const
+   {
+      return HasWeight();
+   }
+
+   double ImageWeight( int c ) const
+   {
+      return m_weight[c]/s_files[0]->m_weight[c];
    }
 
    double Mean( int c ) const
@@ -550,29 +609,9 @@ public:
       return m_iksl[c];
    }
 
-   double Location( int c ) const
-   {
-      return m_location[c];
-   }
-
-   double Dispersion( int c ) const
-   {
-      return m_dispersion[c];
-   }
-
    double Median( int c ) const
    {
       return m_median[c];
-   }
-
-   double Noise( int c ) const
-   {
-      return m_noise[c];
-   }
-
-   double Weight( int c ) const
-   {
-      return m_weight[c];
    }
 
    float Pedestal() const
@@ -655,52 +694,129 @@ private:
 
    typedef IndirectArray<IntegrationFile>       file_list;
 
-   FileFormatInstance*    m_file;
-   String                 m_drzPath;
-   Image*                 m_image;  // used for nonincremental file reading
-   int                    m_currentChannel;
-   FMatrix                m_buffer; // used for incremental file reading
-   DVector                m_scale;
-   DVector                m_mean;
-   DVector                m_median;
-   DVector                m_stdDev;
-   DVector                m_avgDev;
-   DVector                m_mad;
-   DVector                m_bwmv;
-   DVector                m_pbmv;
-   DVector                m_sn;
-   DVector                m_qn;
-   DVector                m_ikss;
-   DVector                m_iksl;
-   DVector                m_location;
-   DVector                m_dispersion;
-   DVector                m_noise;
-   DVector                m_weight;
-   float                  m_pedestal;
-   drizzle_rejection_data m_drzLowRejectionData;
-   drizzle_rejection_data m_drzHighRejectionData;
+   AutoPointer<FileFormatInstance> m_file;
+   String                          m_drzPath;
+   AutoPointer<Image>              m_image;  // used for non-incremental file reading
+   int                             m_currentChannel;
+   FMatrix                         m_buffer; // used for incremental file reading
+   DVector                         m_scale;
+   DVector                         m_mean;
+   DVector                         m_median;
+   DVector                         m_stdDev;
+   DVector                         m_avgDev;
+   DVector                         m_mad;
+   DVector                         m_bwmv;
+   DVector                         m_pbmv;
+   DVector                         m_sn;
+   DVector                         m_qn;
+   DVector                         m_ikss;
+   DVector                         m_iksl;
+   DVector                         m_location;
+   DVector                         m_dispersion;
+   DVector                         m_noise;
+   DVector                         m_weight;
+   float                           m_pedestal;
+   drizzle_rejection_data          m_drzLowRejectionData;
+   drizzle_rejection_data          m_drzHighRejectionData;
 
-   static file_list       s_files;
-   static Rect            s_roi;
-   static int             s_width;
-   static int             s_height;
-   static int             s_numberOfChannels;
-   static bool            s_isColor;
-   static bool            s_incremental;
-   static int             s_bufferRows;
+   static file_list                s_files;
+   static Rect                     s_roi;
+   static int                      s_width;
+   static int                      s_height;
+   static int                      s_numberOfChannels;
+   static bool                     s_isColor;
+   static bool                     s_incremental;
+   static int                      s_bufferRows;
 
-   IntegrationFile() : m_file( 0 ), m_image( 0 )
+   struct ThreadIndex
    {
-   }
+      size_type itemIndex, fileIndex;
 
-   void Open( const String&, const String&, const ImageIntegrationInstance*, bool isReference );
+      ThreadIndex( size_type i, size_type f ) : itemIndex( i ), fileIndex( f )
+      {
+      }
+   };
+
+   class OpenFileThread : public Thread
+   {
+   public:
+
+      OpenFileThread( const ThreadIndex& index, const ImageIntegrationInstance& instance, bool isReference = false ) :
+         m_file( s_files[index.fileIndex] ),
+         m_item( instance.p_images[index.itemIndex] ),
+         m_instance( instance ),
+         m_isReference( isReference ),
+         m_success( false )
+      {
+      }
+
+      virtual void Run()
+      {
+         try
+         {
+            m_file->Open( m_item.path, m_item.drzPath, m_instance, m_isReference );
+            m_success = true;
+         }
+         catch ( ... )
+         {
+            if ( IsRootThread() )
+               throw;
+
+            String text = ConsoleOutputText();
+            ClearConsoleOutputText();
+            try
+            {
+               throw;
+            }
+            ERROR_HANDLER
+            m_errorInfo = ConsoleOutputText();
+            ClearConsoleOutputText();
+            Console().Write( text );
+         }
+      }
+
+      String FilePath() const
+      {
+         return m_item.path;
+      }
+
+      String DrizzleFilePath() const
+      {
+         return m_item.drzPath;
+      }
+
+      bool Succeeded() const
+      {
+         return m_success;
+      }
+
+      String ErrorInfo() const
+      {
+         return m_errorInfo;
+      }
+
+   private:
+
+            IntegrationFile*                     m_file;
+      const ImageIntegrationInstance::ImageItem  m_item;
+      const ImageIntegrationInstance&            m_instance;
+            bool                                 m_isReference : 1;
+            bool                                 m_success     : 1;
+            String                               m_errorInfo;
+   };
+
+   typedef IndirectArray<OpenFileThread> file_thread_list;
+
+   IntegrationFile() = default;
+
+   void Open( const String&, const String&, const ImageIntegrationInstance&, bool isReference );
 
    void Read( int startRow, int channel )
    {
       if ( s_incremental )
       {
          startRow += s_roi.y0;
-         if ( !m_file->Read( *m_buffer, startRow, Min( s_bufferRows, s_roi.y1 - startRow ), channel ) )
+         if ( !m_file->ReadSamples( *m_buffer, startRow, Min( s_bufferRows, s_roi.y1 - startRow ), channel ) )
             throw CatchedException();
       }
       else
@@ -729,103 +845,154 @@ bool IntegrationFile::s_isColor = false;
 bool IntegrationFile::s_incremental = false;
 int IntegrationFile::s_bufferRows = 0;
 
-void IntegrationFile::ToDrizzleData( File& f ) const
+void IntegrationFile::OpenFiles( const ImageIntegrationInstance& instance )
 {
-   f.OutText( "m{" );
-   for ( int i = 0, j = 1; ; ++i, ++j )
-   {
-      if ( j == s_numberOfChannels )
-      {
-         f.OutText( IsoString().Format( "%.16g}", m_location[i] ) );
-         break;
-      }
-      f.OutText( IsoString().Format( "%.16g,", m_location[i] ) );
-   }
+   CloseAll();
 
-   f.OutText( "m0{" );
-   for ( int i = 0, j = 1; ; ++i, ++j )
-   {
-      if ( j == s_numberOfChannels )
-      {
-         f.OutText( IsoString().Format( "%.16g}", s_files[0]->m_location[i] ) );
-         break;
-      }
-      f.OutText( IsoString().Format( "%.16g,", s_files[0]->m_location[i] ) );
-   }
+   Console console;
+   console.WriteLn( "<end><cbr><br>Opening files:<br>" );
 
-   f.OutText( "s{" );
-   for ( int i = 0, j = 1; ; ++i, ++j )
-   {
-      if ( j == s_numberOfChannels )
-      {
-         f.OutText( IsoString().Format( "%.16g}", m_scale[i] ) );
-         break;
-      }
-      f.OutText( IsoString().Format( "%.16g,", m_scale[i] ) );
-   }
+   Array<ThreadIndex> pendingItems;
+   for ( size_type i = 0, f = 0; i < instance.p_images.Length(); ++i )
+      if ( instance.p_images[i].enabled )
+         pendingItems << ThreadIndex( i, f++ );
+      else
+         console.WriteLn( "* Skipping disabled image: " + instance.p_images[i].path );
 
-   f.OutText( "w{" );
-   for ( int i = 0, j = 1; ; ++i, ++j )
-   {
-      if ( j == s_numberOfChannels )
-      {
-         f.OutText( IsoString().Format( "%.16g}", m_weight[i]/s_files[0]->m_weight[i] ) );
-         break;
-      }
-      f.OutText( IsoString().Format( "%.16g,", m_weight[i]/s_files[0]->m_weight[i] ) );
-   }
+   if ( pendingItems.IsEmpty() )
+      throw Error( "No images have been selected." );
 
-   f.OutText( "Rl{" );
-   for ( int i = 0; i < s_numberOfChannels; ++i )
+   if ( pendingItems.Length() < 3 )
+      throw Error( "ImageIntegration requires at least three images; this instance defines only " +
+                     String( pendingItems.Length() ) + " image(s)." );
+
+   if ( instance.p_rejection == IIRejection::LinearFit )
+      if ( pendingItems.Length() < 5 )
+         throw Error( "Linear fit rejection requires at least five images; only " +
+                        String( pendingItems.Length() ) + " images have been selected." );
+
+   for ( size_type i = 0; i < pendingItems.Length(); ++i )
+      s_files << new IntegrationFile;
+
+   OpenFileThread( *pendingItems, instance, true/*isReference*/ ).Run();
+   pendingItems.Remove( pendingItems.Begin() );
+
+   int numberOfThreadsAvailable = RoundInt( Thread::NumberOfThreads( PCL_MAX_PROCESSORS, 1 ) * instance.p_fileThreadOverload );
+
+   if ( instance.p_useFileThreads )
    {
-      f.OutText( "{" );
-      if ( !m_drzLowRejectionData[i].IsEmpty() )
-         for ( size_type j = 0, k = 1; ; ++j, ++k )
+      int numberOfThreads = Min( numberOfThreadsAvailable, int( pendingItems.Length() ) );
+      file_thread_list runningThreads( numberOfThreads ); // N.B.: all pointers are set to nullptr by IndirectArray's ctor.
+      console.NoteLn( String().Format( "<end><br>* Using %d worker threads.", numberOfThreads ) );
+
+      try
+      {
+         /*
+          * Thread watching loop.
+          */
+         for ( int count = 0; ; )
          {
-            const Point& p = m_drzLowRejectionData[i][j];
-            if ( k == m_drzLowRejectionData[i].Length() )
+            int running = 0;
+            for ( file_thread_list::iterator i = runningThreads.Begin(); i != runningThreads.End(); ++i )
             {
-               f.OutText( IsoString().Format( "%d,%d", p.x, p.y ) );
-               break;
-            }
-            f.OutText( IsoString().Format( "%d,%d,", p.x, p.y ) );
-         }
-      f.OutText( "}" );
-   }
-   f.OutText( "}" );
+               Module->ProcessEvents();
+               if ( console.AbortRequested() )
+                  throw ProcessAborted();
 
-   f.OutText( "Rh{" );
-   for ( int i = 0; i < s_numberOfChannels; ++i )
-   {
-      f.OutText( "{" );
-      if ( !m_drzHighRejectionData[i].IsEmpty() )
-         for ( size_type j = 0, k = 1; ; ++j, ++k )
-         {
-            const Point& p = m_drzHighRejectionData[i][j];
-            if ( k == m_drzHighRejectionData[i].Length() )
-            {
-               f.OutText( IsoString().Format( "%d,%d", p.x, p.y ) );
-               break;
+               if ( *i != nullptr )
+               {
+                  if ( !(*i)->Wait( 150 ) )
+                  {
+                     ++running;
+                     continue;
+                  }
+
+                  /*
+                   * A thread has just finished.
+                   */
+                  (*i)->FlushConsoleOutputText();
+                  console.WriteLn();
+                  String errorInfo;
+                  if ( !(*i)->Succeeded() )
+                     errorInfo = (*i)->ErrorInfo();
+
+                  /*
+                   * N.B.: IndirectArray<>::Delete() sets to zero the pointer
+                   * pointed to by the iterator, but does not remove the array
+                   * element.
+                   */
+                  runningThreads.Delete( i );
+
+                  if ( !errorInfo.IsEmpty() )
+                     throw Error( errorInfo );
+
+                  ++count;
+               }
+
+               /*
+                * If there are one or more items pending, create a new thread
+                * and fire it immediately.
+                */
+               if ( !pendingItems.IsEmpty() )
+               {
+                  *i = new OpenFileThread( *pendingItems, instance );
+                  pendingItems.Remove( pendingItems.Begin() );
+                  size_type threadIndex = i - runningThreads.Begin();
+                  console.NoteLn( String().Format( "<end><cbr>[%03u] ", threadIndex ) + (*i)->FilePath() );
+                  (*i)->Start( ThreadPriority::DefaultMax/*, threadIndex*/ );
+                  ++running;
+                  if ( pendingItems.IsEmpty() )
+                     console.NoteLn( "<br>* Waiting for running tasks to terminate...<br>" );
+                  else if ( count > 0 )
+                     console.WriteLn();
+               }
             }
-            f.OutText( IsoString().Format( "%d,%d,", p.x, p.y ) );
+
+            if ( !running )
+               break;
          }
-      f.OutText( "}" );
+      }
+      catch ( ... )
+      {
+         console.NoteLn( "<end><cbr><br>* Waiting for running tasks to terminate..." );
+         for ( OpenFileThread* thread : runningThreads )
+            if ( thread != nullptr )
+               thread->Abort();
+         for ( OpenFileThread* thread : runningThreads )
+            if ( thread != nullptr )
+               thread->Wait();
+         runningThreads.Destroy();
+         throw;
+      }
    }
-   f.OutText( "}" );
+   else // !p_useFileThreads
+   {
+      for ( auto item : pendingItems )
+      {
+         console.WriteLn( "<end><cbr><br>" );
+         OpenFileThread( item, instance ).Run();
+      }
+   }
 }
 
-void IntegrationFile::Open( const String& path, const String& drzPath,
-                            const ImageIntegrationInstance* instance, bool isReference )
+void IntegrationFile::Open( const String& path, const String& drzPath, const ImageIntegrationInstance& instance, bool isReference )
 {
    Console console;
 
-   FileFormat format( File::ExtractExtension( path ), true, false );
+   console.WriteLn( "<end><cbr>" + path );
+   if ( !drzPath.IsEmpty() )
+      if ( instance.p_generateDrizzleData )
+         console.WriteLn( drzPath );
+      else
+         console.WarningLn( "** Warning: No drizzle integration data will be generated." );
+
+   FileFormat format( File::ExtractExtension( path ), true/*read*/, false/*write*/ );
 
    m_file = new FileFormatInstance( format );
 
    ImageDescriptionArray images;
 
-   if ( !m_file->Open( images, path, instance->p_inputHints ) )
+   if ( !m_file->Open( images, path, instance.p_inputHints ) )
       throw CatchedException();
 
    if ( images.IsEmpty() )
@@ -842,9 +1009,9 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
       s_width = images[0].info.width;
       s_height = images[0].info.height;
 
-      if ( instance->p_useROI )
+      if ( instance.p_useROI )
       {
-         s_roi = Rect( s_width, s_height ).Intersection( instance->p_roi.Ordered() );
+         s_roi = Rect( s_width, s_height ).Intersection( instance.p_roi.Ordered() );
          if ( !s_roi.IsRect() )
             throw Error( "Invalid ROI coordinates" );
       }
@@ -856,7 +1023,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
 
       s_incremental = format.CanReadIncrementally();
       if ( s_incremental )
-         s_bufferRows = Range( int( (uint64( instance->p_bufferSizeMB )*1024*1024)/(s_width * sizeof( float )) ), 1, s_roi.Height() );
+         s_bufferRows = Range( int( (uint64( instance.p_bufferSizeMB )*1024*1024)/(s_width * sizeof( float )) ), 1, s_roi.Height() );
       else
       {
          console.NoteLn( "<end><cbr><br>* Incremental image integration disabled due to lack of file format support: " + format.Name() + "<br>" );
@@ -904,51 +1071,51 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
    m_drzLowRejectionData  = drizzle_rejection_data();
    m_drzHighRejectionData = drizzle_rejection_data();
 
-   bool generateOutput = instance->p_generateIntegratedImage || instance->p_generateDrizzleData;
+   bool generateOutput = instance.p_generateIntegratedImage || instance.p_generateDrizzleData;
 
-   bool needNoise =               instance->p_generateIntegratedImage &&
-                                 (instance->p_evaluateNoise ||
-                                  instance->p_combination == IICombination::Average &&
-                                  instance->p_weightMode == IIWeightMode::NoiseEvaluationWeight)
-                               || instance->p_generateDrizzleData &&
-                                  instance->p_weightMode == IIWeightMode::NoiseEvaluationWeight;
+   bool needNoise =               instance.p_generateIntegratedImage &&
+                                 (instance.p_evaluateNoise ||
+                                  instance.p_combination == IICombination::Average &&
+                                  instance.p_weightMode == IIWeightMode::NoiseEvaluationWeight)
+                               || instance.p_generateDrizzleData &&
+                                  instance.p_weightMode == IIWeightMode::NoiseEvaluationWeight;
 
    bool needScale = needNoise  || generateOutput &&
-                                 (instance->p_normalization == IINormalization::AdditiveWithScaling ||
-                                  instance->p_normalization == IINormalization::MultiplicativeWithScaling)
-                               || instance->p_rejection != IIRejection::NoRejection &&
-                                  instance->p_rejectionNormalization == IIRejectionNormalization::Scale;
+                                 (instance.p_normalization == IINormalization::AdditiveWithScaling ||
+                                  instance.p_normalization == IINormalization::MultiplicativeWithScaling)
+                               || instance.p_rejection != IIRejection::NoRejection &&
+                                  instance.p_rejectionNormalization == IIRejectionNormalization::Scale;
 
    bool needMedian = needScale || generateOutput &&
-                                 (instance->p_normalization != IINormalization::NoNormalization ||
-                                  instance->p_weightMode == IIWeightMode::SignalWeight ||
-                                  instance->p_weightMode == IIWeightMode::MedianWeight)
-                               || instance->p_rejection != IIRejection::NoRejection &&
-                                  instance->p_rejectionNormalization == IIRejectionNormalization::EqualizeFluxes;
+                                 (instance.p_normalization != IINormalization::NoNormalization ||
+                                  instance.p_weightMode == IIWeightMode::SignalWeight ||
+                                  instance.p_weightMode == IIWeightMode::MedianWeight)
+                               || instance.p_rejection != IIRejection::NoRejection &&
+                                  instance.p_rejectionNormalization == IIRejectionNormalization::EqualizeFluxes;
 
-   bool needIKSS =                instance->p_weightScale == IIWeightScale::IKSS
-                               || instance->p_generateIntegratedImage &&
-                                  instance->p_evaluateNoise;
+   bool needIKSS =                instance.p_weightScale == IIWeightScale::IKSS
+                               || instance.p_generateIntegratedImage &&
+                                  instance.p_evaluateNoise;
 
-   bool needAvgDev =              instance->p_weightScale == IIWeightScale::AvgDev
+   bool needAvgDev =              instance.p_weightScale == IIWeightScale::AvgDev
                                || generateOutput &&
-                                  instance->p_weightMode == IIWeightMode::SignalWeight;
+                                  instance.p_weightMode == IIWeightMode::SignalWeight;
 
    bool needMean =                generateOutput &&
-                                  instance->p_weightMode == IIWeightMode::AverageWeight;
+                                  instance.p_weightMode == IIWeightMode::AverageWeight;
 
-   if ( instance->p_useCache && GetFromCache( path ) )
+   if ( instance.p_useCache && GetFromCache( path ) )
       console.NoteLn( "<end><cbr>* Retrieved data from file cache." );
 
    bool doMean   = m_mean.IsEmpty()   && needMean;
    bool doMedian = m_median.IsEmpty() && needMedian;
    bool doStdDev = false; //m_stdDev.IsEmpty() && needStdDev; ### StdDev not used in this implementation
    bool doAvgDev = m_avgDev.IsEmpty() && needAvgDev;
-   bool doMAD    = m_mad.IsEmpty()    && instance->p_weightScale == IIWeightScale::MAD;
-   bool doBWMV   = m_bwmv.IsEmpty()   && instance->p_weightScale == IIWeightScale::BWMV;
-   bool doPBMV   = m_pbmv.IsEmpty()   && instance->p_weightScale == IIWeightScale::PBMV;
-   bool doSn     = m_sn.IsEmpty()     && instance->p_weightScale == IIWeightScale::Sn;
-   bool doQn     = m_qn.IsEmpty()     && instance->p_weightScale == IIWeightScale::Qn;
+   bool doMAD    = m_mad.IsEmpty()    && instance.p_weightScale == IIWeightScale::MAD;
+   bool doBWMV   = m_bwmv.IsEmpty()   && instance.p_weightScale == IIWeightScale::BWMV;
+   bool doPBMV   = m_pbmv.IsEmpty()   && instance.p_weightScale == IIWeightScale::PBMV;
+   bool doSn     = m_sn.IsEmpty()     && instance.p_weightScale == IIWeightScale::Sn;
+   bool doQn     = m_qn.IsEmpty()     && instance.p_weightScale == IIWeightScale::Qn;
    bool doIKSS   = (m_ikss.IsEmpty() || m_iksl.IsEmpty()) && needIKSS;
    bool doNoise  = m_noise.IsEmpty()  && needNoise;
 
@@ -1054,17 +1221,17 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
    if ( doIKSS )
       m_ikss = EvaluateIKSS( m_iksl, *m_image );
 
-   if ( m_image != 0 )
+   if ( m_image.IsValid() )
    {
       m_image->Status().Complete();
-      m_image->SetStatusCallback( 0 );
+      m_image->SetStatusCallback( nullptr );
    }
 
    if ( doNoise )
    {
       m_noise = DVector( s_numberOfChannels );
       bool noiseOk = false;
-      if ( !instance->p_ignoreNoiseKeywords )
+      if ( !instance.p_ignoreNoiseKeywords )
          if ( format.CanStoreKeywords() )
          {
             noiseOk = true;
@@ -1084,14 +1251,11 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
          }
 
       if ( !noiseOk )
-         m_noise = EvaluateNoise( ImageVariant( m_image ), instance->p_mrsMinDataFraction );
+         m_noise = EvaluateNoise( ImageVariant( m_image.Ptr() ), instance.p_mrsMinDataFraction );
    }
 
    if ( s_incremental )
-   {
-      if ( m_image != 0 )
-         delete m_image, m_image = 0;
-   }
+      m_image.Destroy();
    else
       m_image->ResetSelections();
 
@@ -1103,10 +1267,10 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
          m_pedestal = 0;
    }
 
-   if ( instance->p_useCache )
+   if ( instance.p_useCache )
       AddToCache( path );
 
-   switch ( instance->p_weightScale )
+   switch ( instance.p_weightScale )
    {
    case IIWeightScale::AvgDev: m_dispersion = m_avgDev; break;
    case IIWeightScale::MAD:    m_dispersion = m_mad; break;
@@ -1118,7 +1282,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
    case IIWeightScale::IKSS:   m_dispersion = m_ikss; break;
    }
 
-   if ( instance->p_weightScale == IIWeightScale::IKSS )
+   if ( instance.p_weightScale == IIWeightScale::IKSS )
       m_location = m_iksl;
    else
       m_location = m_median;
@@ -1139,7 +1303,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
          console.Write( String().Format( " %8.5f", m_scale[c] ) );
       console.Write(       "<br>Zero offset     : " );
       for ( int c = 0; c < s_numberOfChannels; ++c )
-         console.Write( String().Format( " %+.6e", s_files[0]->m_location[c] - m_location[c] ) );
+         console.Write( String().Format( " %+.6e", ZeroOffset( c ) ) );
 
       if ( needNoise )
       {
@@ -1155,12 +1319,12 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
    {
       m_weight = DVector( s_numberOfChannels );
 
-      if ( instance->p_generateDrizzleData || instance->p_combination == IICombination::Average )
+      /*
+       * Image weighting only makes sense for average combination.
+       */
+      if ( instance.p_generateDrizzleData || instance.p_combination == IICombination::Average )
       {
-         /*
-          * Image weighting only makes sense for average combination.
-          */
-         switch ( instance->p_weightMode )
+         switch ( instance.p_weightMode )
          {
          default:
          case IIWeightMode::DontCare:
@@ -1183,7 +1347,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
             for ( int c = 0; c < s_numberOfChannels; ++c )
             {
                /*
-                * Weighting by inverse scaled mean square error
+                * Weighting by inverse scaled mean square error.
                 */
                double e2 = m_scale[c] * m_noise[c]; // scaled noise estimate
                e2 *= e2;
@@ -1195,9 +1359,9 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
          case IIWeightMode::KeywordWeight:
             if ( !format.CanStoreKeywords() )
                throw Error( m_file->FilePath() + ": The " + format.Name() + " format cannot store keywords." );
-            m_weight[0] = KeywordValue( instance->p_weightKeyword );
+            m_weight[0] = KeywordValue( instance.p_weightKeyword );
             if ( m_weight[0] <= 0 )
-               throw Error( m_file->FilePath() + ": Nonexistent or invalid weight keyword '" + instance->p_weightKeyword + "'." );
+               throw Error( m_file->FilePath() + ": Nonexistent or invalid weight keyword '" + instance.p_weightKeyword + "'." );
             m_weight = m_weight[0];
             break;
          case IIWeightMode::SignalWeight:
@@ -1220,7 +1384,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
 
          console.Write(           "Weight          : " );
          for ( int c = 0; c < s_numberOfChannels; ++c )
-            console.Write( String().Format( " %10.5f", m_weight[c]/s_files[0]->m_weight[c] ) );
+            console.Write( String().Format( " %10.5f", ImageWeight( c ) ) );
          console.WriteLn();
       }
       else
@@ -1237,7 +1401,7 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
       if ( s_roi != m_image->Bounds() )
          m_image->CropTo( s_roi );
 
-   if ( instance->p_generateDrizzleData )
+   if ( instance.p_generateDrizzleData )
    {
       m_drzPath = drzPath.Trimmed();
       if ( m_drzPath.IsEmpty() )
@@ -1249,10 +1413,123 @@ void IntegrationFile::Open( const String& path, const String& drzPath,
    }
 }
 
+void IntegrationFile::ToDrizzleData( File& f ) const
+{
+   f.OutText( "m{" );
+   for ( int i = 0, j = 1; ; ++i, ++j )
+   {
+      if ( j == s_numberOfChannels )
+      {
+         f.OutText( IsoString().Format( "%.16g}", m_location[i] ) );
+         break;
+      }
+      f.OutText( IsoString().Format( "%.16g,", m_location[i] ) );
+   }
+
+   f.OutText( "m0{" );
+   for ( int i = 0, j = 1; ; ++i, ++j )
+   {
+      if ( j == s_numberOfChannels )
+      {
+         f.OutText( IsoString().Format( "%.16g}", s_files[0]->m_location[i] ) );
+         break;
+      }
+      f.OutText( IsoString().Format( "%.16g,", s_files[0]->m_location[i] ) );
+   }
+
+   f.OutText( "s{" );
+   for ( int i = 0, j = 1; ; ++i, ++j )
+   {
+      if ( j == s_numberOfChannels )
+      {
+         f.OutText( IsoString().Format( "%.16g}", m_scale[i] ) );
+         break;
+      }
+      f.OutText( IsoString().Format( "%.16g,", m_scale[i] ) );
+   }
+
+   f.OutText( "w{" );
+   for ( int i = 0, j = 1; ; ++i, ++j )
+   {
+      if ( j == s_numberOfChannels )
+      {
+         f.OutText( IsoString().Format( "%.16g}", m_weight[i]/s_files[0]->m_weight[i] ) );
+         break;
+      }
+      f.OutText( IsoString().Format( "%.16g,", m_weight[i]/s_files[0]->m_weight[i] ) );
+   }
+
+   /*
+    * N.B.: If pixel rejection parameters are incorrect, a huge number of
+    * rejection coordinates could have to be generated in the drizzle file. In
+    * such cases the drizzle file generation process may take a very long time
+    * to complete, especially on typical low-end machines. For this reason we
+    * have to be responsive to a potential abort request from the user.
+    */
+
+   f.OutText( "Rl{" );
+   for ( int i = 0; i < s_numberOfChannels; ++i )
+   {
+      f.OutText( "{" );
+      if ( !m_drzLowRejectionData[i].IsEmpty() )
+      {
+         Console console;
+         for ( size_type j = 0, k = 1; ; ++j, ++k )
+         {
+            if ( j%100 == 0 )
+            {
+               Module->ProcessEvents();
+               if ( console.AbortRequested() )
+                  throw ProcessAborted();
+            }
+
+            const Point& p = m_drzLowRejectionData[i][j];
+            if ( k == m_drzLowRejectionData[i].Length() )
+            {
+               f.OutText( IsoString().Format( "%d,%d", p.x, p.y ) );
+               break;
+            }
+            f.OutText( IsoString().Format( "%d,%d,", p.x, p.y ) );
+         }
+      }
+      f.OutText( "}" );
+   }
+   f.OutText( "}" );
+
+   f.OutText( "Rh{" );
+   for ( int i = 0; i < s_numberOfChannels; ++i )
+   {
+      f.OutText( "{" );
+      if ( !m_drzHighRejectionData[i].IsEmpty() )
+      {
+         Console console;
+         for ( size_type j = 0, k = 1; ; ++j, ++k )
+         {
+            if ( j%100 == 0 )
+            {
+               Module->ProcessEvents();
+               if ( console.AbortRequested() )
+                  throw ProcessAborted();
+            }
+
+            const Point& p = m_drzHighRejectionData[i][j];
+            if ( k == m_drzHighRejectionData[i].Length() )
+            {
+               f.OutText( IsoString().Format( "%d,%d", p.x, p.y ) );
+               break;
+            }
+            f.OutText( IsoString().Format( "%d,%d,", p.x, p.y ) );
+         }
+      }
+      f.OutText( "}" );
+   }
+   f.OutText( "}" );
+}
+
 double IntegrationFile::KeywordValue( const IsoString& keyName )
 {
    FITSKeywordArray keywords;
-   if ( !m_file->Extract( keywords ) )
+   if ( !m_file->ReadFITSKeywords( keywords ) )
       throw CatchedException();
 
    for ( FITSKeywordArray::const_iterator i = keywords.Begin(); i != keywords.End(); ++i )
@@ -1352,7 +1629,7 @@ class ImageIntegrationEngine
 public:
 
    ImageIntegrationEngine( const ImageIntegrationInstance& i, StatusMonitor& m ) :
-   instance( i ), monitor( m ), threadData( monitor, 0 )
+      instance( i ), monitor( m ), threadData( monitor, 0 )
    {
    }
 
@@ -1367,9 +1644,10 @@ protected:
    public:
 
       EngineThread( const ImageIntegrationEngine& engine, int firstStack, int endStack ) :
-      Thread(),
-      m_data( engine.threadData ),
-      m_firstStack( firstStack ), m_endStack( endStack )
+         Thread(),
+         m_data( engine.threadData ),
+         m_firstStack( firstStack ),
+         m_endStack( endStack )
       {
       }
 
@@ -1401,17 +1679,16 @@ public:
 
    DataLoaderEngine( const ImageIntegrationInstance& aInstance, StatusMonitor& aMonitor,
                      int ar, RejectionStacks& aR, RejectionCounts& aN, RejectionSlopes& aM ) :
-   ImageIntegrationEngine( aInstance, aMonitor ),
-   r( ar ), R( aR ), N( aN ), M( aM ), threads()
+      ImageIntegrationEngine( aInstance, aMonitor ),
+      r( ar ), R( aR ), N( aN ), M( aM ), threads()
    {
       int numberOfThreads = Thread::NumberOfThreads( R.Length(), 1 );
       int stacksPerThread = R.Length()/numberOfThreads;
-
       for ( int i = 0; i < numberOfThreads; ++i )
       {
          int k0 = i*stacksPerThread;
          int k1 = (i == numberOfThreads-1) ? R.Length() : k0+stacksPerThread;
-         threads.Add( new DataLoaderThread( *this, k0, k1 ) );
+         threads << new DataLoaderThread( *this, k0, k1 );
       }
    }
 
@@ -1438,8 +1715,8 @@ private:
    public:
 
       DataLoaderThread( DataLoaderEngine& engine, int firstStack, int endStack ) :
-      EngineThread( engine, firstStack, endStack ),
-      m_engine( engine )
+         EngineThread( engine, firstStack, endStack ),
+         m_engine( engine )
       {
       }
 
@@ -1472,23 +1749,27 @@ void DataLoaderEngine::DataLoaderThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
+   FVector* M = (I.p_rejection == IIRejection::LinearFit) ? E.M.ComponentPtr( m_firstStack ) : nullptr;
+
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
    {
       // Source pixels
-      E.R[k] = RejectionMatrix( IntegrationFile::Width(), IntegrationFile::NumberOfFiles() );
+      *R = RejectionMatrix( IntegrationFile::Width(), IntegrationFile::NumberOfFiles() );
       for ( int i = 0; i < IntegrationFile::NumberOfFiles(); ++i )
       {
          const float* b = IntegrationFile::FileByIndex( i )[E.r+k];
          for ( int x = 0; x < IntegrationFile::Width(); ++x )
-            E.R[k][x][i].Set( *b++, i );
+            R->RowPtr( x )[i].Set( *b++, i );
       }
 
       // Pixel counters
-      E.N[k] = IVector( IntegrationFile::NumberOfFiles(), IntegrationFile::Width() );
+      *N = IVector( IntegrationFile::NumberOfFiles(), IntegrationFile::Width() );
 
       // Rejection slopes for the linear fit clipping algorithm
       if ( I.p_rejection == IIRejection::LinearFit )
-         E.M[k] = FVector( .0F, IntegrationFile::Width() );
+         *M++ = FVector( .0F, IntegrationFile::Width() );
 
       UPDATE_THREAD_MONITOR( 10 )
    }
@@ -1510,9 +1791,9 @@ public:
    RejectionEngine( const ImageIntegrationInstance& aInstance, StatusMonitor& aMonitor,
                     RejectionStacks& aR, RejectionCounts& aN, RejectionSlopes& aM,
                     const DVector& am, const DVector& as, const DVector& aq ) :
-   ImageIntegrationEngine( aInstance, aMonitor ),
-   R( aR ), N( aN ), M( aM ), m( am ), s( as ), q( aq ),
-   rangeThreads(), normalizeThreads(), rejectThreads(), threadPrivate( 0 )
+      ImageIntegrationEngine( aInstance, aMonitor ),
+      R( aR ), N( aN ), M( aM ), m( am ), s( as ), q( aq ),
+      rangeThreads(), normalizeThreads(), rejectThreads(), threadPrivate()
    {
       int numberOfThreads = Thread::NumberOfThreads( R.Length(), 1 );
       int stacksPerThread = R.Length()/numberOfThreads;
@@ -1523,33 +1804,33 @@ public:
          int k1 = (i == numberOfThreads-1) ? R.Length() : k0+stacksPerThread;
 
          if ( instance.p_rejection != IIRejection::NoRejection )
-            normalizeThreads.Add( new NormalizationThread( *this, k0, k1 ) );
+            normalizeThreads << new NormalizationThread( *this, k0, k1 );
 
          if ( instance.p_rangeClipLow || instance.p_rangeClipHigh )
-            rangeThreads.Add( new RangeRejectionThread( *this, k0, k1 ) );
+            rangeThreads << new RangeRejectionThread( *this, k0, k1 );
 
          switch ( instance.p_rejection )
          {
          case IIRejection::MinMax:
-            rejectThreads.Add( new MinMaxRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new MinMaxRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::PercentileClip:
-            rejectThreads.Add( new PercentileClipRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new PercentileClipRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::SigmaClip:
-            rejectThreads.Add( new SigmaClipRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new SigmaClipRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::WinsorizedSigmaClip:
-            rejectThreads.Add( new WinsorizedSigmaClipRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new WinsorizedSigmaClipRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::AveragedSigmaClip:
-            rejectThreads.Add( new AveragedSigmaClipRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new AveragedSigmaClipRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::LinearFit:
-            rejectThreads.Add( new LinearFitRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new LinearFitRejectionThread( *this, k0, k1 );
             break;
          case IIRejection::CCDClip:
-            rejectThreads.Add( new CCDClipRejectionThread( *this, k0, k1 ) );
+            rejectThreads << new CCDClipRejectionThread( *this, k0, k1 );
             break;
          default:
             break;
@@ -1562,8 +1843,7 @@ public:
       normalizeThreads.Destroy();
       rangeThreads.Destroy();
       rejectThreads.Destroy();
-      if ( threadPrivate != 0 )
-         delete threadPrivate, threadPrivate = 0;
+      threadPrivate.Destroy();
    }
 
    void Normalize()
@@ -1592,22 +1872,22 @@ public:
    {
       if ( !rejectThreads.IsEmpty() )
       {
-         for ( size_type i = 0; i < rejectThreads.Length(); ++i )
-            rejectThreads[i].PreRun();
+         for ( RejectionThread& thread : rejectThreads )
+            thread.PreRun();
 
          threadData.total = R.Length();
          threadData.count = 0;
          AbstractImage::RunThreads( rejectThreads, threadData );
          monitor = threadData.status;
 
-         for ( size_type i = 0; i < rejectThreads.Length(); ++i )
-            rejectThreads[i].PostRun();
+         for ( RejectionThread& thread : rejectThreads )
+            thread.PostRun();
       }
    }
 
    static double RejectionMedian( const RejectionDataItem* r, int n )
    {
-      // NB: Assume that {r0...rn} is already sorted by value.
+      // Assume that {r0...rn} is already sorted by value.
       if ( n < 2 )
          return 0;
       int n2 = n >> 1;
@@ -1708,8 +1988,8 @@ private:
    public:
 
       RejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      EngineThread( engine, firstStack, endStack ),
-      m_engine( engine )
+         EngineThread( engine, firstStack, endStack ),
+         m_engine( engine )
       {
       }
 
@@ -1721,16 +2001,7 @@ private:
       {
       }
 
-#ifdef _MSC_VER
-      /*
-       * VC++ 2010 and 2012 can't deal with this virtual function redeclared as pure...
-       */
-      virtual void Run()
-      {
-      }
-#else
       virtual void Run() = 0;
-#endif
 
       virtual void PostRun()
       {
@@ -1748,7 +2019,7 @@ private:
    public:
 
       NormalizationThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1760,7 +2031,7 @@ private:
    public:
 
       RangeRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1772,7 +2043,7 @@ private:
    public:
 
       MinMaxRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1784,7 +2055,7 @@ private:
    public:
 
       PercentileClipRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1796,7 +2067,7 @@ private:
    public:
 
       SigmaClipRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1808,7 +2079,7 @@ private:
    public:
 
       WinsorizedSigmaClipRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1820,7 +2091,7 @@ private:
    public:
 
       AveragedSigmaClipRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1846,7 +2117,7 @@ private:
    public:
 
       LinearFitRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
@@ -1858,12 +2129,13 @@ private:
    public:
 
       CCDClipRejectionThread( RejectionEngine& engine, int firstStack, int endStack ) :
-      RejectionThread( engine, firstStack, endStack )
+         RejectionThread( engine, firstStack, endStack )
       {
       }
 
       virtual void PreRun();
       virtual void Run();
+      virtual void PostRun();
 
    private:
 
@@ -1885,8 +2157,8 @@ private:
    const DVector&         s; //                        : scaling
    const DVector&         q; //                        : fluxes
 
-         thread_list             rangeThreads, normalizeThreads, rejectThreads;
-         RejectionThreadPrivate* threadPrivate;
+         thread_list      rangeThreads, normalizeThreads, rejectThreads;
+         AutoPointer<RejectionThreadPrivate> threadPrivate;
 
    friend class NormalizationThread;
    friend class RangeRejectionThread;
@@ -1901,7 +2173,7 @@ private:
 
 // ----------------------------------------------------------------------------
 
-#define P   static_cast<RejectionData*>( m_engine.threadPrivate )
+#define P   static_cast<RejectionData*>( m_engine.threadPrivate.Ptr() )
 
 // ----------------------------------------------------------------------------
 
@@ -1909,32 +2181,35 @@ void RejectionEngine::RangeRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 1 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
 
-         // ### Do not change the order in the stack of pixels here (i.e. do not
-         //     sort them). Pixels are required in file order for rejection
-         //     normalization, which takes place AFTER range rejection.
-
-         // Note that the sets of low and high out-of-range pixels are disjoint.
-         // For this reason we can accumulate a single rejection counter (nr).
+         /*
+          * ### N.B.: Do not change the order in the stack of pixels here (e.g.
+          * do not sort them). Pixels are required in file order for rejection
+          * normalization, which takes place AFTER range rejection.
+          *
+          * Note that the sets of low and high out-of-range pixels are
+          * disjoint. For this reason we can accumulate a single rejection
+          * counter in the nr variable.
+          */
          int nr = 0;
          for ( int j = 0; j < n; ++j )
             if ( I.p_rangeClipLow && r[j].value <= I.p_rangeLow )
                r[j].rejectRangeLow = true, ++nr;
             else if ( I.p_rangeClipHigh && r[j].value >= I.p_rangeHigh )
                r[j].rejectRangeHigh = true, ++nr;
-         N.DataPtr()[i] -= nr;
+         N->DataPtr()[i] -= nr;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
@@ -1947,28 +2222,29 @@ void RejectionEngine::NormalizationThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
 
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R )
+   {
       switch ( I.p_rejectionNormalization )
       {
       case IIRejectionNormalization::Scale:
          {
-            // Scale + zero offset
-            // This normalization can yield negative pixel
-            // values. If that happens, we must raise all pixels
-            // to remove negative values, since all rejection
-            // routines expect pixels >= 0.
-
+            /*
+             * Scale + zero offset normalization.
+             *
+             * ### N.B.: This normalization can yield negative pixel values. If
+             * that happens, we must raise all pixels to remove negative
+             * values, since all rejection routines expect positive pixels.
+             */
             const DVector& m = E.m;
             const DVector& s = E.s;
 
             float rmin = 0;
-            for ( int x = 0; x < R.Rows(); ++x )
+            for ( int x = 0; x < R->Rows(); ++x )
             {
-               RejectionDataItem* r = R[x] + 1;
-               for ( int i = 1; i < R.Columns(); ++i, ++r )
+               RejectionDataItem* r = R->RowPtr( x ) + 1;
+               for ( int i = 1; i < R->Columns(); ++i, ++r )
                   if ( !r->IsRejected() )
                   {
                      r->value = (r->value - m[i])*s[i] + m[0];
@@ -1978,10 +2254,10 @@ void RejectionEngine::NormalizationThread::Run()
             }
 
             if ( rmin < 0 )
-               for ( int x = 0; x < R.Rows(); ++x )
+               for ( int x = 0; x < R->Rows(); ++x )
                {
-                  RejectionDataItem* r = R[x];
-                  for ( int i = 0; i < R.Columns(); ++i, ++r )
+                  RejectionDataItem* r = R->RowPtr( x );
+                  for ( int i = 0; i < R->Columns(); ++i, ++r )
                      if ( !r->IsRejected() )
                         r->value -= rmin;
                }
@@ -1990,21 +2266,22 @@ void RejectionEngine::NormalizationThread::Run()
 
       case IIRejectionNormalization::EqualizeFluxes:
          {
-            // Flux equalization
-
+            /*
+             * Flux equalization normalization.
+             */
             const DVector& q = E.q;
 
-            for ( int x = 0; x < R.Rows(); ++x )
+            for ( int x = 0; x < R->Rows(); ++x )
             {
-               RejectionDataItem* r = R[x] + 1;
-               for ( int i = 1; i < R.Columns(); ++i, ++r )
+               RejectionDataItem* r = R->RowPtr( x ) + 1;
+               for ( int i = 1; i < R->Columns(); ++i, ++r )
                   if ( !r->IsRejected() )
                      r->value *= q[i];
             }
          }
          break;
 
-      default: // ??
+      default: // ?!
          break;
       }
 
@@ -2018,14 +2295,14 @@ void RejectionEngine::MinMaxRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 1 )
             continue;
 
@@ -2034,7 +2311,7 @@ void RejectionEngine::MinMaxRejectionThread::Run()
 
          if ( nl > 0 || nh > 0 )
          {
-            RejectionDataItem* r = R.DataPtr()[i];
+            RejectionDataItem* r = R->DataPtr()[i];
             Sort( r, r + n );
 
             for ( int j = 0; j < nl; ++j )
@@ -2043,7 +2320,7 @@ void RejectionEngine::MinMaxRejectionThread::Run()
                r[--j].rejectHigh = true;
 
             Sort( r, r + n );
-            N.DataPtr()[i] -= Min( n, nl+nh );
+            N->DataPtr()[i] -= Min( n, nl+nh );
          }
       }
 
@@ -2057,18 +2334,18 @@ void RejectionEngine::PercentileClipRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 2 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          double median = E.RejectionMedian( r, n );
@@ -2096,7 +2373,7 @@ void RejectionEngine::PercentileClipRejectionThread::Run()
          if ( nc > 0 )
          {
             Sort( r, r + n );
-            N.DataPtr()[i] -= nc;
+            N->DataPtr()[i] -= nc;
          }
       }
 
@@ -2110,18 +2387,18 @@ void RejectionEngine::SigmaClipRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 3 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          for ( ;; )
@@ -2160,7 +2437,7 @@ void RejectionEngine::SigmaClipRejectionThread::Run()
                break;
          }
 
-         N.DataPtr()[i] = n;
+         N->DataPtr()[i] = n;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
@@ -2173,18 +2450,18 @@ void RejectionEngine::WinsorizedSigmaClipRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 3 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          for ( ;; )
@@ -2222,7 +2499,7 @@ void RejectionEngine::WinsorizedSigmaClipRejectionThread::Run()
                break;
          }
 
-         N.DataPtr()[i] = n;
+         N->DataPtr()[i] = n;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
@@ -2231,28 +2508,29 @@ void RejectionEngine::WinsorizedSigmaClipRejectionThread::Run()
 
 // ----------------------------------------------------------------------------
 
-RejectionEngine::AveragedSigmaClipRejectionThread::RejectionData::RejectionData(
-                                    RejectionStacks& aR, RejectionCounts& aN ) :
-RejectionEngine::RejectionThreadPrivate(), m( aR.Length() ), s( aR.Length() )
+RejectionEngine::AveragedSigmaClipRejectionThread::RejectionData::RejectionData( RejectionStacks& aR, RejectionCounts& aN ) :
+   RejectionEngine::RejectionThreadPrivate(),
+   m( aR.Length() ),
+   s( aR.Length() )
 {
-   for ( int k = 0; k < aR.Length(); ++k )
+   RejectionMatrix* R = aR.DataPtr();
+   IVector* N = aN.DataPtr();
+
+   for ( int k = 0; k < aR.Length(); ++k, ++R, ++N )
    {
-      RejectionMatrix& R = aR[k];
-      IVector& N = aN[k];
+      m[k] = DVector( R->Rows() );
+      s[k] = DVector( R->Rows() );
 
-      m[k] = DVector( R.Rows() );
-      s[k] = DVector( R.Rows() );
-
-      for ( int i = 0; i < R.Rows(); ++i )
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 3 )
          {
             m[k][i] = s[k][i] = .0F;
             continue;
          }
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          double median = m[k][i] = RejectionEngine::RejectionMedian( r, n );
@@ -2270,7 +2548,7 @@ RejectionEngine::RejectionThreadPrivate(), m( aR.Length() ), s( aR.Length() )
          else
          {
             s[k][i] = m[k][i] = 0;
-            N.DataPtr()[i] = 0;
+            N->DataPtr()[i] = 0;
          }
       }
    }
@@ -2278,7 +2556,7 @@ RejectionEngine::RejectionThreadPrivate(), m( aR.Length() ), s( aR.Length() )
 
 void RejectionEngine::AveragedSigmaClipRejectionThread::PreRun()
 {
-   if ( E.threadPrivate == 0 )
+   if ( E.threadPrivate.IsNull() )
       E.threadPrivate = new RejectionData( E.R, E.N );
 }
 
@@ -2286,20 +2564,21 @@ void RejectionEngine::AveragedSigmaClipRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
+
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
    {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
       const DVector& m = P->m[k];
       const DVector& s = P->s[k];
 
-      for ( int i = 0; i < R.Rows(); ++i )
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 3 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
 
          double median = m[i];
 
@@ -2339,7 +2618,7 @@ void RejectionEngine::AveragedSigmaClipRejectionThread::Run()
             median = E.RejectionMedian( r, n );
          }
 
-         N.DataPtr()[i] = n;
+         N->DataPtr()[i] = n;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
@@ -2348,8 +2627,7 @@ void RejectionEngine::AveragedSigmaClipRejectionThread::Run()
 
 void RejectionEngine::AveragedSigmaClipRejectionThread::PostRun()
 {
-   if ( E.threadPrivate != 0 )
-      delete E.threadPrivate, E.threadPrivate = 0;
+   E.threadPrivate.Destroy();
 }
 
 // ----------------------------------------------------------------------------
@@ -2358,19 +2636,19 @@ void RejectionEngine::LinearFitRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
-      FVector& M = E.M[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
+   FVector* M = E.M.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N, ++M )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 5 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          for ( ;; )
@@ -2384,8 +2662,8 @@ void RejectionEngine::LinearFitRejectionThread::Run()
             {
                for ( RejectionDataItem* d = r, * d1 = r + n; d < d1; ++d )
                   d->rejectLow = d->rejectHigh = true;
-               N.DataPtr()[i] = 0;
-               M.DataPtr()[i] = 0;
+               N->DataPtr()[i] = 0;
+               M->DataPtr()[i] = 0;
                break;
             }
 
@@ -2419,7 +2697,7 @@ void RejectionEngine::LinearFitRejectionThread::Run()
                 * number because of roundoff - do not propagate it. See bug
                 * report: http://pixinsight.com/forum/index.php?topic=8704.0
                 */
-               M.DataPtr()[i] = (L.b > 0) ? ((L.b < 1e7) ? ArcTan( L.b )/Const<double>::pi4() : 1.0) : 0.0;
+               M->DataPtr()[i] = (L.b > 0) ? ((L.b < 1e7) ? ArcTan( L.b )/Const<double>::pi4() : 1.0) : 0.0;
                break;
             }
 
@@ -2430,7 +2708,7 @@ void RejectionEngine::LinearFitRejectionThread::Run()
                break;
          }
 
-         N.DataPtr()[i] = n;
+         N->DataPtr()[i] = n;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
@@ -2439,9 +2717,8 @@ void RejectionEngine::LinearFitRejectionThread::Run()
 
 // ----------------------------------------------------------------------------
 
-RejectionEngine::CCDClipRejectionThread::RejectionData::RejectionData(
-                  float ccdGain, float ccdReadNoise, float ccdScaleNoise, int bits ) :
-RejectionEngine::RejectionThreadPrivate()
+RejectionEngine::CCDClipRejectionThread::RejectionData::RejectionData( float ccdGain, float ccdReadNoise, float ccdScaleNoise, int bits ) :
+   RejectionEngine::RejectionThreadPrivate()
 {
    /*
    r2g2 = double( ccdReadNoise )/ccdGain; r2g2 *= r2g2/n;
@@ -2457,7 +2734,7 @@ RejectionEngine::RejectionThreadPrivate()
 
 void RejectionEngine::CCDClipRejectionThread::PreRun()
 {
-   if ( E.threadPrivate == 0 )
+   if ( E.threadPrivate.IsNull() )
       E.threadPrivate = new RejectionData( I.p_ccdGain, I.p_ccdReadNoise, I.p_ccdScaleNoise, 16 );
 }
 
@@ -2465,18 +2742,18 @@ void RejectionEngine::CCDClipRejectionThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
-   {
-      RejectionMatrix& R = E.R[k];
-      IVector& N = E.N[k];
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+   IVector* N = E.N.ComponentPtr( m_firstStack );
 
-      for ( int i = 0; i < R.Rows(); ++i )
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R, ++N )
+   {
+      for ( int i = 0; i < R->Rows(); ++i )
       {
-         int n = N[i];
+         int n = N->DataPtr()[i];
          if ( n < 2 )
             continue;
 
-         RejectionDataItem* r = R.DataPtr()[i];
+         RejectionDataItem* r = R->DataPtr()[i];
          Sort( r, r + n );
 
          for ( ;; )
@@ -2521,11 +2798,16 @@ void RejectionEngine::CCDClipRejectionThread::Run()
                break;
          }
 
-         N.DataPtr()[i] = n;
+         N->DataPtr()[i] = n;
       }
 
       UPDATE_THREAD_MONITOR( 10 )
    }
+}
+
+void RejectionEngine::CCDClipRejectionThread::PostRun()
+{
+   E.threadPrivate.Destroy();
 }
 
 // ----------------------------------------------------------------------------
@@ -2549,10 +2831,10 @@ public:
                       int c, RejectionStacks& aR, const RejectionCounts& aN,
                       const DVector& ad, DVector& am, const DVector& as,
                       float* aResult32, double* aResult64 ) :
-   ImageIntegrationEngine( aInstance, aMonitor ),
-   chn( c ), R( aR ), N( aN ), d( ad ), m( am ), s( as ),
-   result32( aResult32 ), result64( aResult64 ),
-   threads()
+      ImageIntegrationEngine( aInstance, aMonitor ),
+      chn( c ), R( aR ), N( aN ), d( ad ), m( am ), s( as ),
+      result32( aResult32 ), result64( aResult64 ),
+      threads()
    {
       int numberOfThreads = Thread::NumberOfThreads( R.Length(), 1 );
       int stacksPerThread = R.Length()/numberOfThreads;
@@ -2561,7 +2843,7 @@ public:
       {
          int k0 = i*stacksPerThread;
          int k1 = (i == numberOfThreads-1) ? R.Length() : k0+stacksPerThread;
-         threads.Add( new IntegrationThread( *this, k0, k1 ) );
+         threads << new IntegrationThread( *this, k0, k1 );
       }
    }
 
@@ -2588,8 +2870,8 @@ private:
    public:
 
       IntegrationThread( IntegrationEngine& engine, int firstStack, int endStack ) :
-      EngineThread( engine, firstStack, endStack ),
-      m_engine( engine )
+         EngineThread( engine, firstStack, endStack ),
+         m_engine( engine )
       {
       }
 
@@ -2621,23 +2903,24 @@ void IntegrationEngine::IntegrationThread::Run()
 {
    INIT_THREAD_MONITOR()
 
-   float* result32 = 0;
-   double* result64 = 0;
+   float* result32 = nullptr;
+   double* result64 = nullptr;
    if ( I.p_generate64BitResult )
-      result64 = E.result64 + m_firstStack*IntegrationFile::Width();
+      result64 = E.result64 + size_type( m_firstStack )*size_type( IntegrationFile::Width() );
    else
-      result32 = E.result32 + m_firstStack*IntegrationFile::Width();
+      result32 = E.result32 + size_type( m_firstStack )*size_type( IntegrationFile::Width() );
 
-   for ( int k = m_firstStack; k < m_endStack; ++k )
+   RejectionMatrix* R = E.R.ComponentPtr( m_firstStack );
+
+   for ( int k = m_firstStack; k < m_endStack; ++k, ++R )
    {
-      RejectionMatrix& R = E.R[k];
       const IVector& N = E.N[k];
 
-      for ( int x = 0; x < R.Rows(); ++x )
+      for ( int x = 0; x < R->Rows(); ++x )
       {
-         RejectionDataItem* r = R[x];
-         double f;
+         RejectionDataItem* r = R->DataPtr()[x];
          int n = N[x];
+         double f;
 
          pcl_enum thisCombination = I.p_combination;
          if ( n == 0 )
@@ -2706,7 +2989,7 @@ void IntegrationEngine::IntegrationThread::Run()
          case IICombination::Median:
          case IICombination::Minimum:
          case IICombination::Maximum:
-            Sort( R[x], R[x]+n, RejectionDataItem::CompareRaw );
+            Sort( r, r+n, RejectionDataItem::CompareRaw );
             switch ( thisCombination )
             {
             default:
@@ -2729,7 +3012,7 @@ void IntegrationEngine::IntegrationThread::Run()
             break;
          }
 
-         if ( result32 != 0 )
+         if ( result32 != nullptr )
             *result32++ = float( f );
          else
             *result64++ = f;
@@ -2892,28 +3175,28 @@ ImageIntegrationInstance::IntegrationDescriptionItems::IntegrationDescriptionIte
 String ImageIntegrationInstance::IntegrationDescription() const
 {
    IntegrationDescriptionItems items( *this );
-   String s;
+   String description;
    if ( !items.pixelCombination.IsEmpty() )
-      s +=   "Pixel combination ......... " + items.pixelCombination;
+      description +=   "Pixel combination ......... " + items.pixelCombination;
    if ( !items.outputNormalization.IsEmpty() )
-      s += "\nOutput normalization ...... " + items.outputNormalization;
+      description += "\nOutput normalization ...... " + items.outputNormalization;
    if ( !items.weightMode.IsEmpty() )
-      s += "\nWeighting mode ............ " + items.weightMode;
+      description += "\nWeighting mode ............ " + items.weightMode;
    if ( !items.scaleEstimator.IsEmpty() )
-      s += "\nScale estimator ........... " + items.scaleEstimator;
+      description += "\nScale estimator ........... " + items.scaleEstimator;
    if ( !items.rangeRejection.IsEmpty() )
-      s += "\nRange rejection ........... " + items.rangeRejection;
+      description += "\nRange rejection ........... " + items.rangeRejection;
    if ( !items.pixelRejection.IsEmpty() )
-      s += "\nPixel rejection ........... " + items.pixelRejection;
+      description += "\nPixel rejection ........... " + items.pixelRejection;
    if ( !items.rejectionNormalization.IsEmpty() )
-      s += "\nRejection normalization ... " + items.rejectionNormalization;
+      description += "\nRejection normalization ... " + items.rejectionNormalization;
    if ( !items.rejectionClippings.IsEmpty() )
-      s += "\nRejection clippings ....... " + items.rejectionClippings;
+      description += "\nRejection clippings ....... " + items.rejectionClippings;
    if ( !items.rejectionParameters.IsEmpty() )
-      s += "\nRejection parameters ...... " + items.rejectionParameters;
+      description += "\nRejection parameters ...... " + items.rejectionParameters;
    if ( !items.regionOfInterest.IsEmpty() )
-      s += "\nRegion of interest ........ " + items.regionOfInterest;
-   return s;
+      description += "\nRegion of interest ........ " + items.regionOfInterest;
+   return description;
 }
 
 bool ImageIntegrationInstance::ExecuteGlobal()
@@ -2936,7 +3219,7 @@ bool ImageIntegrationInstance::ExecuteGlobal()
       Console console;
       console.EnableAbort();
 
-      if ( TheIntegrationCache == 0 )
+      if ( TheIntegrationCache == nullptr )
       {
          new IntegrationCache; // loads cache upon construction
          if ( TheIntegrationCache->IsEnabled() )
@@ -2946,34 +3229,7 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                console.NoteLn( "<end><cbr><br>* Loaded cache: " + String( TheIntegrationCache->NumberOfItems() ) + " item(s)" );
       }
 
-      console.WriteLn( "<end><cbr><br>Opening files:" );
-
-      for ( image_list::const_iterator i = p_images.Begin(); i != p_images.End(); ++i )
-         if ( i->enabled )
-         {
-            console.WriteLn( i->path );
-            if ( !i->drzPath.IsEmpty() )
-            {
-               console.WriteLn( i->drzPath );
-               if ( !p_generateDrizzleData )
-                  console.WarningLn( "<end><cbr>** Warning: No drizzle integration data will be generated." );
-            }
-            IntegrationFile::Open( i->path, i->drzPath, this );
-
-            // Keep the GUI responsive
-            Module->ProcessEvents();
-            if ( console.AbortRequested() )
-               throw ProcessAborted();
-         }
-
-      if ( IntegrationFile::NumberOfFiles() < 3 )
-         throw Error( "ImageIntegration requires at least three images; this instance defines only " +
-                      String( IntegrationFile::NumberOfFiles() ) + " image(s)." );
-
-      if ( p_rejection == IIRejection::LinearFit )
-         if ( IntegrationFile::NumberOfFiles() < 5 )
-            throw Error( "Linear fit rejection requires at least five images; only " +
-                         String( IntegrationFile::NumberOfFiles() ) + " images have been selected." );
+      IntegrationFile::OpenFiles( *this );
 
       console.WriteLn( String().Format( "<end><cbr><br>Integration of %d images:", IntegrationFile::NumberOfFiles() ) );
       console.WriteLn( IntegrationDescription() );
@@ -3023,7 +3279,7 @@ bool ImageIntegrationInstance::ExecuteGlobal()
          stackBufferSize *= 1024*1024;
          totalStacks = int( Min( Max( size_type( 1 ), stackBufferSize/stackSize ),
                                  size_type( IntegrationFile::BufferRows() ) ) );
-         console.WriteLn( String().Format( "<end><cbr><br>* Using %d concurrent pixel stack(s) = %.2f MB",
+         console.WriteLn( String().Format( "<end><cbr><br>* Using %d concurrent pixel stack(s) = %.2f MiB",
                                            totalStacks, totalStacks*stackSize/1024/1024.0 ) );
       }
 
@@ -3158,29 +3414,39 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
                DataLoaderEngine( *this, monitor, r, stacks, counts, slopes ).LoadData();
 
-               // Perform pixel rejection
+               /*
+                * Perform pixel rejection.
+                */
                if ( doReject )
                {
                   RejectionEngine rejector( *this, monitor, stacks, counts, slopes, m, s, q );
 
-                  // Range rejection must be done in first place to exclude
-                  // all out-of-range pixels.
-                  // ### The order of pixels in each stack must NOT be changed
-                  //     because rejection normalization depends on file order.
+                  /*
+                   * Range rejection must be done in first place to exclude all
+                   * out-of-range pixels.
+                   *
+                   * ### N.B.: The order of pixels in each stack must NOT be
+                   * changed because rejection normalization depends on file
+                   * order.
+                   */
                   if ( p_rangeClipLow || p_rangeClipHigh )
                      rejector.RejectRange();
                   else
                      monitor += numberOfStacks;
 
-                  // Rejection normalization
+                  /*
+                   * Rejection normalization.
+                   */
                   if ( p_rejection != IIRejection::NoRejection )
                      rejector.Normalize();
                   else
                      monitor += numberOfStacks;
 
-                  // In case we have performed range rejection, each stack with
-                  // out-of-range pixels must be sorted to send rejected pixels
-                  // to the bottom of the stack.
+                  /*
+                   * In case we have performed range rejection, each stack with
+                   * out-of-range pixels must be sorted to send rejected pixels
+                   * to the bottom of the stack.
+                   */
                   if ( p_rangeClipLow || p_rangeClipHigh )
                      for ( int k = 0; k < numberOfStacks; ++k )
                      {
@@ -3191,7 +3457,9 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                               Sort( R[x], R[x] + IntegrationFile::NumberOfFiles() );
                      }
 
-                  // Reject pixels
+                  /*
+                   * Reject pixels.
+                   */
                   if ( p_rejection != IIRejection::NoRejection )
                      rejector.Reject();
                   else
@@ -3202,10 +3470,13 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
                if ( p_generateIntegratedImage )
                {
+                  /*
+                   * Integrate pixel stacks.
+                   */
                   IntegrationEngine( *this, monitor, c,
                                      stacks, counts, d, m, s, resultData32, resultData64 ).Integrate();
-                  size_type delta = size_type( numberOfStacks )*IntegrationFile::Width();
-                  if ( resultData32 != 0 )
+                  size_type delta = size_type( numberOfStacks )*size_type( IntegrationFile::Width() );
+                  if ( resultData32 != nullptr )
                      resultData32 += delta;
                   else
                      resultData64 += delta;
@@ -3213,7 +3484,9 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                else
                   monitor += numberOfStacks;
 
-               // Update rejection counts and maps
+               /*
+                * Update rejection counts and maps.
+                */
                if ( doReject )
                   for ( int k = 0, y = y0+r; k < numberOfStacks; ++k, ++y )
                   {
@@ -3292,9 +3565,15 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
          if ( doReject )
          {
+            bool showReject = p_rejection != IIRejection::NoRejection || (p_rangeClipLow || p_rangeClipHigh) && p_reportRangeRejection;
+
+            /*
+             * Show rejection stats and update output rejection data.
+             */
             Module->ProcessEvents();
 
-            console.WriteLn( "<end><cbr><br>Pixel rejection counts:" );
+            if ( showReject )
+               console.WriteLn( "<end><cbr><br>Pixel rejection counts:" );
 
             size_type N = IntegrationFile::NumberOfPixels();
             size_type NL = 0, NH = 0, NLR = 0, NHR = 0;
@@ -3310,15 +3589,18 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                NH += nh;
                NHR += nhr;
 
-               console.WriteLn( IntegrationFile::FileByIndex( i ).Path() );
-               if ( p_reportRangeRejection )
-                  console.WriteLn( String().Format( "%5d : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
-                                                    i+1, nl+nh+nlr+nhr, 100.0*(nl+nh+nlr+nhr)/N,
-                                                    nl+nlr, nh+nhr, 100.0*(nl+nlr)/N, 100.0*(nh+nhr)/N ) );
-               else
-                  console.WriteLn( String().Format( "%5d : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
-                                                    i+1, nl+nh, 100.0*(nl+nh)/N,
-                                                    nl, nh, 100.0*nl/N, 100.0*nh/N ) );
+               if ( showReject )
+               {
+                  console.WriteLn( IntegrationFile::FileByIndex( i ).Path() );
+                  if ( p_reportRangeRejection )
+                     console.WriteLn( String().Format( "%5d : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
+                                                       i+1, nl+nh+nlr+nhr, 100.0*(nl+nh+nlr+nhr)/N,
+                                                       nl+nlr, nh+nhr, 100.0*(nl+nlr)/N, 100.0*(nh+nhr)/N ) );
+                  else
+                     console.WriteLn( String().Format( "%5d : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
+                                                       i+1, nl+nh, 100.0*(nl+nh)/N,
+                                                       nl, nh, 100.0*nl/N, 100.0*nh/N ) );
+               }
 
                if ( c < 3 )
                {
@@ -3327,15 +3609,18 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                }
             }
 
-            N *= IntegrationFile::NumberOfFiles();
-            if ( p_reportRangeRejection )
-               console.WriteLn( String().Format( "<end><cbr><br><b>Total</b> : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
-                                                 NL+NH+NLR+NHR, 100.0*(NL+NH+NLR+NHR)/N,
-                                                 NL+NLR, NH+NHR, 100.0*(NL+NLR)/N, 100.0*(NH+NHR)/N ) );
-            else
-               console.WriteLn( String().Format( "<end><cbr><br><b>Total</b> : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
-                                                 NL+NH, 100.0*(NL+NH)/N,
-                                                 NL, NH, 100.0*NL/N, 100.0*NH/N ) );
+            if ( showReject )
+            {
+               N *= IntegrationFile::NumberOfFiles();
+               if ( p_reportRangeRejection )
+                  console.WriteLn( String().Format( "<end><cbr><br><b>Total</b> : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
+                                                   NL+NH+NLR+NHR, 100.0*(NL+NH+NLR+NHR)/N,
+                                                   NL+NLR, NH+NHR, 100.0*(NL+NLR)/N, 100.0*(NH+NHR)/N ) );
+               else
+                  console.WriteLn( String().Format( "<end><cbr><br><b>Total</b> : %9u %7.3f%% (%9u + %9u = %7.3f%% + %7.3f%%)",
+                                                   NL+NH, 100.0*(NL+NH)/N,
+                                                   NL, NH, 100.0*NL/N, 100.0*NH/N ) );
+            }
 
             if ( c < 3 )
             {
@@ -3357,6 +3642,9 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
          if ( p_evaluateNoise )
          {
+            /*
+             * Show noise evaluation info.
+             */
             console.WriteLn( "<end><cbr>" );
 
             DVector noise = EvaluateNoise( result, p_mrsMinDataFraction );
@@ -3455,39 +3743,44 @@ bool ImageIntegrationInstance::ExecuteGlobal()
             }
          }
 
+         /*
+          * Update HISTORY and PEDESTAL FITS keywords.
+          * ### FIXME: This should be optional and disabled by default.
+          * ### TODO: Implement generation of XISF properties ASAP.
+          */
          FITSKeywordArray keywords;
          resultWindow.GetKeywords( keywords );
 
-         keywords.Add( FITSHeaderKeyword( "COMMENT", IsoString(), "Integration with " + PixInsightVersion::AsString() ) );
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "Integration with " + Module->ReadableVersion() ) );
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "Integration with ImageIntegration process" ) );
+         keywords << FITSHeaderKeyword( "COMMENT", IsoString(), "Integration with " + PixInsightVersion::AsString() )
+                  << FITSHeaderKeyword( "HISTORY", IsoString(), "Integration with " + Module->ReadableVersion() )
+                  << FITSHeaderKeyword( "HISTORY", IsoString(), "Integration with ImageIntegration process" );
 
          IntegrationDescriptionItems items( *this );
          if ( !items.pixelCombination.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.pixelCombination: " + items.pixelCombination ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.pixelCombination: " + items.pixelCombination );
          if ( !items.outputNormalization.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.outputNormalization: " + items.outputNormalization ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.outputNormalization: " + items.outputNormalization );
          if ( !items.weightMode.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.weightMode: " + items.weightMode ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.weightMode: " + items.weightMode );
          if ( !items.scaleEstimator.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.scaleEstimator: " + items.scaleEstimator ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.scaleEstimator: " + items.scaleEstimator );
          if ( !items.rangeRejection.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rangeRejection: " + items.rangeRejection ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rangeRejection: " + items.rangeRejection );
          if ( !items.pixelRejection.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.pixelRejection: " + items.pixelRejection ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.pixelRejection: " + items.pixelRejection );
          if ( !items.rejectionNormalization.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionNormalization: " + items.rejectionNormalization ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionNormalization: " + items.rejectionNormalization );
          if ( !items.rejectionClippings.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionClippings: " + items.rejectionClippings ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionClippings: " + items.rejectionClippings );
          if ( !items.rejectionParameters.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionParameters: " + items.rejectionParameters ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.rejectionParameters: " + items.rejectionParameters );
          if ( !items.regionOfInterest.IsEmpty() )
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.regionOfInterest: " + items.regionOfInterest ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), "ImageIntegration.regionOfInterest: " + items.regionOfInterest );
 
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(),
-                                          IsoString().Format( "ImageIntegration.numberOfImages: %d", IntegrationFile::NumberOfFiles() ) ) );
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(),
-                                          IsoString().Format( "ImageIntegration.totalPixels: %lu", o_output.totalPixels ) ) );
+         keywords << FITSHeaderKeyword( "HISTORY", IsoString(),
+                                        IsoString().Format( "ImageIntegration.numberOfImages: %d", IntegrationFile::NumberOfFiles() ) )
+                  << FITSHeaderKeyword( "HISTORY", IsoString(),
+                                        IsoString().Format( "ImageIntegration.totalPixels: %lu", o_output.totalPixels ) );
 
          IsoString totalRejectedLow = IsoString().Format( "ImageIntegration.totalRejectedLow: %lu(%.3f%%)",
                                  o_output.totalRejectedLow[0], 100.0*o_output.totalRejectedLow[0]/o_output.totalPixels );
@@ -3502,8 +3795,8 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                                  o_output.totalRejectedHigh[1], 100.0*o_output.totalRejectedHigh[1]/o_output.totalPixels,
                                  o_output.totalRejectedHigh[2], 100.0*o_output.totalRejectedHigh[2]/o_output.totalPixels );
          }
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), totalRejectedLow ) );
-         keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), totalRejectedHigh ) );
+         keywords << FITSHeaderKeyword( "HISTORY", IsoString(), totalRejectedLow )
+                  << FITSHeaderKeyword( "HISTORY", IsoString(), totalRejectedHigh );
 
          if ( p_evaluateNoise )
          {
@@ -3525,39 +3818,107 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                referenceNoiseReductions.AppendFormat( " %.4f %.4f", o_output.referenceNoiseReductions[1], o_output.referenceNoiseReductions[2] );
                medianNoiseReductions.AppendFormat( " %.4f %.4f", o_output.medianNoiseReductions[1], o_output.medianNoiseReductions[2] );
             }
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), finalNoiseEstimates ) );
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), finalScaleEstimates ) );
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), finalLocationEstimates ) );
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), referenceNoiseReductions ) );
-            keywords.Add( FITSHeaderKeyword( "HISTORY", IsoString(), medianNoiseReductions ) );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), finalNoiseEstimates )
+                     << FITSHeaderKeyword( "HISTORY", IsoString(), finalScaleEstimates )
+                     << FITSHeaderKeyword( "HISTORY", IsoString(), finalLocationEstimates )
+                     << FITSHeaderKeyword( "HISTORY", IsoString(), referenceNoiseReductions )
+                     << FITSHeaderKeyword( "HISTORY", IsoString(), medianNoiseReductions );
 
             for ( int i = 0; i < o_output.numberOfChannels && i < 3; ++i )
-               keywords.Add( FITSHeaderKeyword( IsoString().Format( "NOISE%02d", i ),
-                                          IsoString().Format( "%.4e", o_output.finalNoiseEstimates[i] ),
-                                          IsoString().Format( "Gaussian noise estimate for channel #%d", i ) ) );
+               keywords << FITSHeaderKeyword( IsoString().Format( "NOISE%02d", i ),
+                                              IsoString().Format( "%.4e", o_output.finalNoiseEstimates[i] ),
+                                              IsoString().Format( "Gaussian noise estimate for channel #%d", i ) );
          }
 
          if ( pedestal != 0 )
          {
             if ( pedestal > 0 )
             {
-               keywords.Add( FITSHeaderKeyword( "HISTORY",
-                                                IsoString(),
-                                                IsoString().Format( "ImageIntegration.outputPedestal: %.4g DN", pedestal ) ) );
-               keywords.Add( FITSHeaderKeyword( "PEDESTAL",
-                                                IsoString().Format( "%.4g", pedestal ),
-                                                "Value in DN added to enforce positivity" ) );
+               keywords << FITSHeaderKeyword( "HISTORY",
+                                              IsoString(),
+                                              IsoString().Format( "ImageIntegration.outputPedestal: %.4g DN", pedestal ) )
+                        << FITSHeaderKeyword( "PEDESTAL",
+                                              IsoString().Format( "%.4g", pedestal ),
+                                              "Value in DN added to enforce positivity" );
                console.NoteLn( String().Format( "* PEDESTAL keyword created with value: %.4g DN", pedestal ) );
             }
             else
                console.WarningLn( "** Warning: Inconsistent pedestal values detected - PEDESTAL keyword not created." );
          }
 
+         /*
+          * Per-image HISTORY keywords.
+          */
+         for ( int i = 0; i < IntegrationFile::NumberOfFiles(); ++i )
+         {
+            const IntegrationFile& file = IntegrationFile::FileByIndex( i );
+
+            if ( file.HasDispersion() )
+            {
+               IsoString dispersion = IsoString().Format( "ImageIntegration.scaleEstimates_%d: %.4e", i, file.Dispersion( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  dispersion.AppendFormat( " %.4e %.4e", file.Dispersion( 1 ), file.Dispersion( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), dispersion );
+            }
+
+            if ( file.HasLocation() )
+            {
+               IsoString location = IsoString().Format( "ImageIntegration.locationEstimates_%d: %.4e", i, file.Location( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  location.AppendFormat( " %.4e %.4e", file.Location( 1 ), file.Location( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), location );
+            }
+
+            if ( file.HasNoise() )
+            {
+               IsoString noise = IsoString().Format( "ImageIntegration.noiseEstimates_%d: %.4e", i, file.Noise( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  noise.AppendFormat( " %.4e %.4e", file.Noise( 1 ), file.Noise( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), noise );
+            }
+
+            if ( file.HasImageWeight() )
+            {
+               IsoString weight = IsoString().Format( "ImageIntegration.imageWeights_%d: %.5e", i, file.ImageWeight( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  weight.AppendFormat( " %.5e %.5e", file.ImageWeight( 1 ), file.ImageWeight( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), weight );
+            }
+
+            if ( file.HasScale() )
+            {
+               IsoString scale = IsoString().Format( "ImageIntegration.scaleFactors_%d: %.5e", i, file.Scale( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  scale.AppendFormat( " %.5e %.5e", file.Scale( 1 ), file.Scale( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), scale );
+            }
+
+            if ( file.HasZeroOffset() )
+            {
+               IsoString zeroOffset = IsoString().Format( "ImageIntegration.zeroOffsets_%d: %+.6e", i, file.ZeroOffset( 0 ) );
+               if ( IntegrationFile::NumberOfChannels() > 1 )
+                  zeroOffset.AppendFormat( " %+.6e %+.6e", file.ZeroOffset( 1 ), file.ZeroOffset( 2 ) );
+               keywords << FITSHeaderKeyword( "HISTORY", IsoString(), zeroOffset );
+            }
+
+            IsoString rejectedLow = IsoString().Format( "ImageIntegration.rejectedLow_%d: %lu", i, o_output.imageData[i].rejectedLow[0] );
+            if ( IntegrationFile::NumberOfChannels() > 1 )
+               rejectedLow.AppendFormat( " %lu %lu", o_output.imageData[i].rejectedLow[1], o_output.imageData[i].rejectedLow[2] );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), rejectedLow );
+
+            IsoString rejectedHigh = IsoString().Format( "ImageIntegration.rejectedHigh_%d: %lu", i, o_output.imageData[i].rejectedHigh[0] );
+            if ( IntegrationFile::NumberOfChannels() > 1 )
+               rejectedHigh.AppendFormat( " %lu %lu", o_output.imageData[i].rejectedHigh[1], o_output.imageData[i].rejectedHigh[2] );
+            keywords << FITSHeaderKeyword( "HISTORY", IsoString(), rejectedHigh );
+         }
+
          resultWindow.SetKeywords( keywords );
          resultWindow.Show();
 
+         /*
+          * Update instance output properties.
+          */
          o_output.integrationImageId = resultWindow.MainView().Id();
-
          for ( int i = 0; i < IntegrationFile::NumberOfFiles(); ++i )
             for ( int c = 0; c < IntegrationFile::NumberOfChannels() && c < 3; ++c )
                o_output.imageData[i].weights[c] = IntegrationFile::FileByIndex( i ).Weight( c );
@@ -3565,6 +3926,9 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
       if ( p_generateDrizzleData )
       {
+         /*
+          * Generate Drizzle integration data.
+          */
          console.WriteLn( "* Updating drizzle data files:" );
 
          int succeeded = 0;
@@ -3605,7 +3969,18 @@ bool ImageIntegrationInstance::ExecuteGlobal()
                console.WriteLn( F.DrizzleDataPath() );
                ++succeeded;
             }
-            ERROR_HANDLER
+            catch ( ProcessAborted& )
+            {
+               throw;
+            }
+            catch ( ... )
+            {
+               try
+               {
+                  throw;
+               }
+               ERROR_HANDLER
+            }
 
             Module->ProcessEvents();
          }
@@ -3639,7 +4014,6 @@ bool ImageIntegrationInstance::ExecuteGlobal()
 
       return true;
    }
-
    catch ( ... )
    {
       IntegrationFile::CloseAll();
@@ -3759,6 +4133,10 @@ void* ImageIntegrationInstance::LockParameter( const MetaParameter* p, size_type
       return &p_mrsMinDataFraction;
    if ( p == TheIINoGUIMessagesParameter )
       return &p_noGUIMessages;
+   if ( p == TheIIUseFileThreadsParameter )
+      return &p_useFileThreads;
+   if ( p == TheIIFileThreadOverloadParameter )
+      return &p_fileThreadOverload;
 
    if ( p == TheIIIntegrationImageIdParameter )
       return o_output.integrationImageId.Begin();
@@ -3859,7 +4237,7 @@ void* ImageIntegrationInstance::LockParameter( const MetaParameter* p, size_type
    if ( p == TheIIImageRejectedHighBParameter )
       return o_output.imageData[tableRow].rejectedHigh.At( 2 );
 
-   return 0;
+   return nullptr;
 }
 
 bool ImageIntegrationInstance::AllocateParameter( size_type sizeOrLength, const MetaParameter* p, size_type tableRow )
@@ -3961,4 +4339,4 @@ size_type ImageIntegrationInstance::ParameterLength( const MetaParameter* p, siz
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF ImageIntegrationInstance.cpp - Released 2016/02/21 20:22:43 UTC
+// EOF ImageIntegrationInstance.cpp - Released 2017-04-14T23:07:12Z

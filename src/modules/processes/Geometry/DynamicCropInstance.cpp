@@ -2,15 +2,15 @@
 //    / __ \ / ____// /
 //   / /_/ // /    / /
 //  / ____// /___ / /___   PixInsight Class Library
-// /_/     \____//_____/   PCL 02.01.01.0784
+// /_/     \____//_____/   PCL 02.01.03.0819
 // ----------------------------------------------------------------------------
-// Standard Geometry Process Module Version 01.01.00.0314
+// Standard Geometry Process Module Version 01.02.01.0336
 // ----------------------------------------------------------------------------
-// DynamicCropInstance.cpp - Released 2016/02/21 20:22:42 UTC
+// DynamicCropInstance.cpp - Released 2017-04-14T23:07:12Z
 // ----------------------------------------------------------------------------
 // This file is part of the standard Geometry PixInsight module.
 //
-// Copyright (c) 2003-2016 Pleiades Astrophoto S.L. All Rights Reserved.
+// Copyright (c) 2003-2017 Pleiades Astrophoto S.L. All Rights Reserved.
 //
 // Redistribution and use in both source and binary forms, with or without
 // modification, is permitted provided that the following conditions are met:
@@ -51,11 +51,11 @@
 // ----------------------------------------------------------------------------
 
 #include "DynamicCropInstance.h"
+#include "GeometryModule.h"
 
 #include <pcl/AutoPointer.h>
 #include <pcl/AutoViewLock.h>
 #include <pcl/ImageWindow.h>
-#include <pcl/MessageBox.h>
 #include <pcl/Mutex.h>
 #include <pcl/PixelInterpolation.h>
 #include <pcl/StdStatus.h>
@@ -68,25 +68,30 @@ namespace pcl
 // ----------------------------------------------------------------------------
 
 DynamicCropInstance::DynamicCropInstance( const MetaProcess* P ) :
-ProcessImplementation( P ),
-p_center( TheCropCenterXParameter->DefaultValue(), TheCropCenterYParameter->DefaultValue() ),
-p_width( TheCropWidthParameter->DefaultValue() ), p_height( TheCropHeightParameter->DefaultValue() ),
-p_angle( TheRotationAngleDynamicCropParameter->DefaultValue() ),
-p_scaleX( TheScaleXParameter->DefaultValue() ), p_scaleY( TheScaleYParameter->DefaultValue() ),
-p_optimizeFast( TheOptimizeFastRotationsDynamicCropParameter->DefaultValue() ),
-p_interpolation( TheInterpolationAlgorithmDynamicCropParameter->Default ),
-p_clampingThreshold( TheClampingThresholdDynamicCropParameter->DefaultValue() ),
-p_smoothness( TheSmoothnessDynamicCropParameter->DefaultValue() ),
-p_fillColor( 4 )
+   ProcessImplementation( P ),
+   p_center( TheDCCenterXParameter->DefaultValue(), TheDCCenterYParameter->DefaultValue() ),
+   p_width( TheDCWidthParameter->DefaultValue() ),
+   p_height( TheDCHeightParameter->DefaultValue() ),
+   p_angle( TheDCRotationAngleParameter->DefaultValue() ),
+   p_scaleX( TheDCScaleXParameter->DefaultValue() ),
+   p_scaleY( TheDCScaleYParameter->DefaultValue() ),
+   p_optimizeFast( TheDCOptimizeFastRotationsParameter->DefaultValue() ),
+   p_interpolation( TheDCInterpolationAlgorithmParameter->Default ),
+   p_clampingThreshold( TheDCClampingThresholdParameter->DefaultValue() ),
+   p_smoothness( TheDCSmoothnessParameter->DefaultValue() ),
+   p_resolution( TheDCXResolutionParameter->DefaultValue(), TheDCYResolutionParameter->DefaultValue() ),
+   p_metric( TheDCMetricResolutionParameter->DefaultValue() ),
+   p_forceResolution( TheDCForceResolutionParameter->DefaultValue() ),
+   p_fillColor( TheDCFillRedParameter->DefaultValue(),
+                TheDCFillGreenParameter->DefaultValue(),
+                TheDCFillBlueParameter->DefaultValue(),
+                TheDCFillAlphaParameter->DefaultValue() ),
+   p_noGUIMessages( TheDCNoGUIMessagesParameter->DefaultValue() )
 {
-   p_fillColor[0] = TheFillRedDynamicCropParameter->DefaultValue();
-   p_fillColor[1] = TheFillGreenDynamicCropParameter->DefaultValue();
-   p_fillColor[2] = TheFillBlueDynamicCropParameter->DefaultValue();
-   p_fillColor[3] = TheFillAlphaDynamicCropParameter->DefaultValue();
 }
 
 DynamicCropInstance::DynamicCropInstance( const DynamicCropInstance& x ) :
-ProcessImplementation( x )
+   ProcessImplementation( x )
 {
    Assign( x );
 }
@@ -94,22 +99,35 @@ ProcessImplementation( x )
 void DynamicCropInstance::Assign( const ProcessImplementation& p )
 {
    const DynamicCropInstance* x = dynamic_cast<const DynamicCropInstance*>( &p );
-   if ( x != 0 )
+   if ( x != nullptr )
    {
-      p_center        = x->p_center;
-      p_width         = x->p_width;
-      p_height        = x->p_height;
-      p_angle         = x->p_angle;
-      p_scaleX        = x->p_scaleX;
-      p_scaleY        = x->p_scaleY;
-      p_optimizeFast  = x->p_optimizeFast;
-      p_interpolation = x->p_interpolation;
-      p_smoothness    = x->p_smoothness;
-      p_fillColor     = x->p_fillColor;
+      p_center            = x->p_center;
+      p_width             = x->p_width;
+      p_height            = x->p_height;
+      p_angle             = x->p_angle;
+      p_scaleX            = x->p_scaleX;
+      p_scaleY            = x->p_scaleY;
+      p_optimizeFast      = x->p_optimizeFast;
+      p_interpolation     = x->p_interpolation;
+      p_clampingThreshold = x->p_clampingThreshold;
+      p_smoothness        = x->p_smoothness;
+      p_resolution        = x->p_resolution;
+      p_metric            = x->p_metric;
+      p_forceResolution   = x->p_forceResolution;
+      p_fillColor         = x->p_fillColor;
+      p_noGUIMessages     = x->p_noGUIMessages;
    }
 }
 
-// ----------------------------------------------------------------------------
+bool DynamicCropInstance::IsMaskable( const View&, const ImageWindow& ) const
+{
+   return false;
+}
+
+UndoFlags DynamicCropInstance::UndoMode( const View& ) const
+{
+   return UndoFlag::PixelData | UndoFlag::Keywords | (p_forceResolution ? UndoFlag::Resolution : 0);
+}
 
 bool DynamicCropInstance::CanExecuteOn( const View& v, String& whyNot ) const
 {
@@ -119,26 +137,12 @@ bool DynamicCropInstance::CanExecuteOn( const View& v, String& whyNot ) const
       return false;
    }
 
-   whyNot.Clear();
    return true;
 }
 
 bool DynamicCropInstance::BeforeExecution( View& view )
 {
-   ImageWindow w = view.Window();
-
-   if ( w.HasPreviews() || w.HasMaskReferences() || !w.Mask().IsNull() )
-      if ( MessageBox( view.Id() + ":\n"
-                       "Existing previews and mask references will be destroyed.\n"
-                       "Some of these side effects could be irreversible. Proceed?",
-                       "DynamicCrop", // caption
-                       StdIcon::Warning,
-                       StdButton::No, StdButton::Yes ).Execute() != StdButton::Yes )
-      {
-         return false;
-      }
-
-   return true;
+   return WarnOnAstrometryMetadataOrPreviewsOrMask( view.Window(), Meta()->Id(), p_noGUIMessages );
 }
 
 // ----------------------------------------------------------------------------
@@ -152,17 +156,15 @@ public:
    {
       DynamicCropData<P> data;
 
-      // Dimensions of target image
+      // Dimensions of the target image
       data.m_sourceWidth  = image.Width();
       data.m_sourceHeight = image.Height();
 
-      // Dimensions of cropped + scaled image
-      data.m_width  = Max( 1, RoundI( C.p_scaleX*C.p_width*data.m_sourceWidth ) );
-      data.m_height = Max( 1, RoundI( C.p_scaleY*C.p_height*data.m_sourceHeight ) );
+      // Dimensions of the cropped and scaled image
+      data.m_width  = Max( 1, RoundInt( C.p_scaleX*C.p_width*data.m_sourceWidth ) );
+      data.m_height = Max( 1, RoundInt( C.p_scaleY*C.p_height*data.m_sourceHeight ) );
 
-      /*
-       * On 32-bit systems, make sure the resulting image requires less than 4 GB.
-       */
+      // On 32-bit systems, make sure the resulting image requires less than 4 GiB.
       if ( sizeof( void* ) == sizeof( uint32 ) )
       {
          uint64 sz = uint64( data.m_width )*uint64( data.m_height )*image.NumberOfChannels()*image.BytesPerSample();
@@ -231,8 +233,8 @@ public:
          {
             interpolation = NewInterpolation( C.p_interpolation,
                                               data.m_width, data.m_height,
-                                              Max( 1, RoundI( C.p_width*data.m_sourceWidth ) ),
-                                              Max( 1, RoundI( C.p_height*data.m_sourceHeight ) ),
+                                              Max( 1, RoundInt( C.p_width*data.m_sourceWidth ) ),
+                                              Max( 1, RoundInt( C.p_height*data.m_sourceHeight ) ),
                                               data.m_rotateSlow, C.p_clampingThreshold, C.p_smoothness, (P*)0 );
 
             info = interpolation->Description() + String().Format( ": %dx%d pixels, %d channels",
@@ -261,17 +263,15 @@ public:
             if ( rotate || data.m_scale )
             {
                AbstractImage::ThreadData threadData( status, N );
-
                ReferenceArray<Thread<P> > threads;
-               for ( int i = 0; i < numberOfThreads; ++i )
+               for ( int i = 0, j = 1; i < numberOfThreads; ++i, ++j )
                   threads.Add( new Thread<P>( threadData, data,
                                               interpolate ? interpolation->NewInterpolator<P>(
-                                                      data.m_f0, data.m_sourceWidth, data.m_sourceHeight ) : 0,
+                                                      data.m_f0, data.m_sourceWidth, data.m_sourceHeight ) : nullptr,
                                               i*rowsPerThread,
-                                              (i < numberOfThreads-1) ? (i + 1)*rowsPerThread : data.m_height ) );
+                                              (j < numberOfThreads) ? j*rowsPerThread : data.m_height ) );
 
                AbstractImage::RunThreads( threads, threadData );
-
                threads.Destroy();
 
                status = threadData.status;
@@ -286,7 +286,7 @@ public:
                double h2 = 0.5*data.m_height;
 
                Rect r( data.m_width, data.m_height );
-               r += Point( TruncI( data.m_centerX-w2 ), TruncI( data.m_centerY-h2 ) );
+               r += Point( TruncInt( data.m_centerX-w2 ), TruncInt( data.m_centerY-h2 ) );
 
                int y = r.y0;
 
@@ -320,7 +320,7 @@ public:
 
             image.Allocator().Deallocate( f0[c] );
             f0[c] = data.m_f;
-            data.m_f = 0;
+            data.m_f = nullptr;
          }
 
          image.ImportData( f0, data.m_width, data.m_height, numberOfChannels, colorSpace );
@@ -328,12 +328,12 @@ public:
       }
       catch ( ... )
       {
-         if ( data.m_f != 0 )
+         if ( data.m_f != nullptr )
             image.Allocator().Deallocate( data.m_f );
-         if ( f0 != 0 )
+         if ( f0 != nullptr )
          {
             for ( int c = 0; c < numberOfChannels; ++c )
-               if ( f0[c] != 0 )
+               if ( f0[c] != nullptr )
                   image.Allocator().Deallocate( f0[c] );
             image.Allocator().Deallocate( f0 );
          }
@@ -348,21 +348,18 @@ private:
    template <class P>
    struct DynamicCropData
    {
-      typename P::sample*       m_f;                // target pixel data
-      const typename P::sample* m_f0;               // source pixel data
-      bool                      m_rotateFast;       // rotate 180 or +/-90
-      bool                      m_rotateSlow;       // rotate arbitrary
-      bool                      m_scale;            // scale image
-      int                       m_fastDegrees;      // fast rotation angle, degrees
-      double                    m_sa, m_ca;         // sin( angle ), cos( angle )
-      double                    m_centerX, m_centerY;  // center x, center y
-      double                    m_scaleX, m_scaleY;    // scale x, scale y
+      typename P::sample*       m_f;                  // target pixel data
+      const typename P::sample* m_f0;                 // source pixel data
+      bool                      m_rotateFast;         // rotate 180 or +/-90
+      bool                      m_rotateSlow;         // rotate arbitrary
+      bool                      m_scale;              // scale image
+      int                       m_fastDegrees;        // fast rotation angle, degrees
+      double                    m_sa, m_ca;           // sin( angle ), cos( angle )
+      double                    m_centerX, m_centerY; // center x, center y
+      double                    m_scaleX, m_scaleY;   // scale x, scale y
       int                       m_sourceWidth, m_sourceHeight; // original width, height
-      int                       m_width, m_height;  // target width, height
-      typename P::sample        m_fillValue;        // unmapped pixel value
-      mutable Mutex             m_mutex;
-      mutable size_type         m_count;
-      bool                      m_abort;
+      int                       m_width, m_height;    // target width, height
+      typename P::sample        m_fillValue;          // unmapped pixel value
    };
 
    template <class P>
@@ -371,19 +368,12 @@ private:
    public:
 
       Thread( AbstractImage::ThreadData& data,
-                         const DynamicCropData<P>& cropData,
-                         PixelInterpolation::Interpolator<P>* interpolator,
-                         int startRow, int endRow ) :
-      pcl::Thread(),
-      m_data( data ), m_cropData( cropData ),
-      m_interpolator( interpolator ), m_startRow( startRow ), m_endRow( endRow )
+              const DynamicCropData<P>& cropData,
+              PixelInterpolation::Interpolator<P>* interpolator, int startRow, int endRow ) :
+         pcl::Thread(),
+         m_data( data ), m_cropData( cropData ),
+         m_interpolator( interpolator ), m_startRow( startRow ), m_endRow( endRow )
       {
-      }
-
-      virtual ~Thread()
-      {
-         if ( m_interpolator != 0 )
-            delete m_interpolator, m_interpolator = 0;
       }
 
       virtual void Run()
@@ -440,8 +430,8 @@ private:
                   Rotate( dx, dy, m_cropData.m_sa, m_cropData.m_ca, m_cropData.m_centerX, m_cropData.m_centerY );
 
                if ( dx >= 0 && dy >= 0 && dx < m_cropData.m_sourceWidth && dy < m_cropData.m_sourceHeight )
-                  *f = m_interpolator ? (*m_interpolator)( dx, dy ) :
-                                        m_cropData.m_f0[TruncI( dy )*m_cropData.m_sourceWidth + TruncI( dx )];
+                  *f = m_interpolator.IsValid() ? (*m_interpolator)( dx, dy ) :
+                                        m_cropData.m_f0[TruncInt( dy )*m_cropData.m_sourceWidth + TruncInt( dx )];
                else
                   *f = m_cropData.m_fillValue;
 
@@ -452,10 +442,10 @@ private:
 
    private:
 
-      AbstractImage::ThreadData&           m_data;
-      const DynamicCropData<P>&            m_cropData;
-      PixelInterpolation::Interpolator<P>* m_interpolator;
-      int                                  m_startRow, m_endRow;
+      AbstractImage::ThreadData&                        m_data;
+      const DynamicCropData<P>&                         m_cropData;
+      AutoPointer<PixelInterpolation::Interpolator<P> > m_interpolator;
+      int                                               m_startRow, m_endRow;
    };
 };
 
@@ -466,16 +456,13 @@ bool DynamicCropInstance::ExecuteOn( View& view )
 
    AutoViewLock lock( view );
 
+   ImageWindow window = view.Window();
    ImageVariant image = view.Image();
 
    if ( image.IsComplexSample() )
       return false;
 
-   ImageWindow window = view.Window();
-
-   window.RemoveMaskReferences();
-   window.RemoveMask();
-   window.DeletePreviews();
+   DeleteAstrometryMetadataAndPreviewsAndMask( window );
 
    Console().EnableAbort();
 
@@ -496,6 +483,13 @@ bool DynamicCropInstance::ExecuteOn( View& view )
       case 32: DynamicCropEngine::Apply( static_cast<UInt32Image&>( *image ), *this ); break;
       }
 
+   if ( p_forceResolution )
+   {
+      Console().WriteLn( String().Format( "Setting resolution: h:%.3lf, v:%.3lf, u:px/%s",
+                                          p_resolution.x, p_resolution.y, p_metric ? "cm" : "inch" ) );
+      window.SetResolution( p_resolution.x, p_resolution.y, p_metric );
+   }
+
    return true;
 }
 
@@ -503,37 +497,47 @@ bool DynamicCropInstance::ExecuteOn( View& view )
 
 void* DynamicCropInstance::LockParameter( const MetaParameter* p, size_type /*tableRow*/ )
 {
-   if ( p == TheCropCenterXParameter )
+   if ( p == TheDCCenterXParameter )
       return &p_center.x;
-   if ( p == TheCropCenterYParameter )
+   if ( p == TheDCCenterYParameter )
       return &p_center.y;
-   if ( p == TheCropWidthParameter )
+   if ( p == TheDCWidthParameter )
       return &p_width;
-   if ( p == TheCropHeightParameter )
+   if ( p == TheDCHeightParameter )
       return &p_height;
-   if ( p == TheRotationAngleDynamicCropParameter )
+   if ( p == TheDCRotationAngleParameter )
       return &p_angle;
-   if ( p == TheScaleXParameter )
+   if ( p == TheDCScaleXParameter )
       return &p_scaleX;
-   if ( p == TheScaleYParameter )
+   if ( p == TheDCScaleYParameter )
       return &p_scaleY;
-   if ( p == TheOptimizeFastRotationsDynamicCropParameter )
+   if ( p == TheDCOptimizeFastRotationsParameter )
       return &p_optimizeFast;
-   if ( p == TheInterpolationAlgorithmDynamicCropParameter )
+   if ( p == TheDCInterpolationAlgorithmParameter )
       return &p_interpolation;
-   if ( p == TheClampingThresholdDynamicCropParameter )
+   if ( p == TheDCClampingThresholdParameter )
       return &p_clampingThreshold;
-   if ( p == TheSmoothnessDynamicCropParameter )
+   if ( p == TheDCSmoothnessParameter )
       return &p_smoothness;
-   if ( p == TheFillRedDynamicCropParameter )
+   if ( p == TheDCXResolutionParameter )
+      return &p_resolution.x;
+   if ( p == TheDCYResolutionParameter )
+      return &p_resolution.y;
+   if ( p == TheDCMetricResolutionParameter )
+      return &p_metric;
+   if ( p == TheDCForceResolutionParameter )
+      return &p_forceResolution;
+   if ( p == TheDCFillRedParameter )
       return p_fillColor.At( 0 );
-   if ( p == TheFillGreenDynamicCropParameter )
+   if ( p == TheDCFillGreenParameter )
       return p_fillColor.At( 1 );
-   if ( p == TheFillBlueDynamicCropParameter )
+   if ( p == TheDCFillBlueParameter )
       return p_fillColor.At( 2 );
-   if ( p == TheFillAlphaDynamicCropParameter )
+   if ( p == TheDCFillAlphaParameter )
       return p_fillColor.At( 3 );
-   return 0;
+   if ( p == TheDCNoGUIMessagesParameter )
+      return &p_noGUIMessages;
+   return nullptr;
 }
 
 // ----------------------------------------------------------------------------
@@ -541,4 +545,4 @@ void* DynamicCropInstance::LockParameter( const MetaParameter* p, size_type /*ta
 } // pcl
 
 // ----------------------------------------------------------------------------
-// EOF DynamicCropInstance.cpp - Released 2016/02/21 20:22:42 UTC
+// EOF DynamicCropInstance.cpp - Released 2017-04-14T23:07:12Z
